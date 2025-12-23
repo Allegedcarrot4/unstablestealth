@@ -38,8 +38,8 @@ export const Sidebar = () => {
       <div className="p-4 border-b border-border">
         <div className="flex items-center justify-between">
           {!collapsed && (
-            <h1 className="font-mono font-bold text-primary text-glow text-lg">
-              STEALTH
+            <h1 className="font-mono font-bold text-primary text-glow text-sm">
+              UNSTABLE STEALTH
             </h1>
           )}
           <Button
