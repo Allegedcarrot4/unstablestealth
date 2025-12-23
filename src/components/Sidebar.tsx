@@ -1,7 +1,6 @@
 import { Link, useLocation } from 'react-router-dom';
 import { 
   Globe, 
-  Gamepad2, 
   Shield, 
   Settings, 
   ChevronLeft, 
@@ -16,7 +15,6 @@ import { useState } from 'react';
 
 const navItems = [
   { path: '/', icon: Globe, label: 'Embedder' },
-  { path: '/games', icon: Gamepad2, label: 'Games' },
   { path: '/proxy', icon: Shield, label: 'Proxy' },
   { path: '/settings', icon: Settings, label: 'Settings' },
 ];
