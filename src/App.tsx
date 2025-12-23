@@ -6,7 +6,6 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { SettingsProvider } from "./contexts/SettingsContext";
 import { MainLayout } from "./layouts/MainLayout";
 import { Embedder } from "./pages/Embedder";
-import { Games } from "./pages/Games";
 import { Proxy } from "./pages/Proxy";
 import { Settings } from "./pages/Settings";
 import NotFound from "./pages/NotFound";
@@ -23,7 +22,6 @@ const App = () => (
           <Routes>
             <Route element={<MainLayout />}>
               <Route path="/" element={<Embedder />} />
-              <Route path="/games" element={<Games />} />
               <Route path="/proxy" element={<Proxy />} />
               <Route path="/settings" element={<Settings />} />
             </Route>
