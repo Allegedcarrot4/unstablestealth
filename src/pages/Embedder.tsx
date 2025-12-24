@@ -86,9 +86,9 @@ export const Embedder = () => {
   };
 
   return (
-    <div className="flex flex-col h-full animate-fade-in">
+    <div className="flex flex-col h-screen animate-fade-in">
       {/* URL Bar */}
-      <div className="p-4 space-y-4">
+      <div className="p-3 space-y-3 shrink-0">
         <form onSubmit={handleEmbed} className="flex gap-2">
           <div className="relative flex-1">
             <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-primary" />
@@ -116,10 +116,10 @@ export const Embedder = () => {
         />
       </div>
 
-      {/* Embed Container */}
+      {/* Embed Container - takes remaining space */}
       <div 
         ref={containerRef}
-        className="flex-1 mx-4 mb-4 rounded-lg overflow-hidden border border-border bg-card"
+        className="flex-1 mx-3 mb-3 rounded-lg overflow-hidden border border-border bg-card min-h-0"
       >
         {embeddedUrl ? (
           <iframe

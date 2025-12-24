@@ -6,7 +6,8 @@ import {
   ChevronLeft, 
   ChevronRight,
   Zap,
-  Crown
+  Crown,
+  Chrome
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSettings } from '@/contexts/SettingsContext';
@@ -18,6 +19,7 @@ import { useState } from 'react';
 const navItems = [
   { path: '/', icon: Globe, label: 'Embedder' },
   { path: '/proxy', icon: Shield, label: 'Proxy' },
+  { path: '/browser', icon: Chrome, label: 'Browser' },
   { path: '/settings', icon: Settings, label: 'Settings' },
 ];
 

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Shield, Ban, Trash2, RefreshCw, Users } from 'lucide-react';
+import { Shield, Ban, Trash2, RefreshCw, Users, MessageCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
@@ -22,9 +23,17 @@ interface BannedDevice {
   reason: string | null;
 }
 
+interface ChatMessage {
+  id: string;
+  session_id: string;
+  message: string;
+  created_at: string;
+}
+
 export const Admin = () => {
   const [sessions, setSessions] = useState<SessionData[]>([]);
   const [bannedDevices, setBannedDevices] = useState<BannedDevice[]>([]);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const { session: currentSession } = useAuth();
   const { toast } = useToast();
@@ -32,9 +41,10 @@ export const Admin = () => {
   const fetchData = async () => {
     setIsLoading(true);
     
-    const [sessionsRes, bannedRes] = await Promise.all([
+    const [sessionsRes, bannedRes, messagesRes] = await Promise.all([
       supabase.from('sessions').select('*').order('last_active_at', { ascending: false }),
-      supabase.from('banned_devices').select('*').order('banned_at', { ascending: false })
+      supabase.from('banned_devices').select('*').order('banned_at', { ascending: false }),
+      supabase.from('chat_messages').select('*').order('created_at', { ascending: false }).limit(100)
     ]);
     
     if (sessionsRes.data) {
@@ -42,6 +52,9 @@ export const Admin = () => {
     }
     if (bannedRes.data) {
       setBannedDevices(bannedRes.data);
+    }
+    if (messagesRes.data) {
+      setChatMessages(messagesRes.data);
     }
     
     setIsLoading(false);
@@ -289,6 +302,44 @@ export const Admin = () => {
               )}
             </tbody>
           </table>
+        </div>
+      </section>
+      {/* Chat Messages */}
+      <section className="space-y-4">
+        <div className="flex items-center gap-2">
+          <MessageCircle className="h-5 w-5 text-primary" />
+          <h2 className="font-mono font-bold">Chat Messages ({chatMessages.length})</h2>
+        </div>
+        
+        <div className="border border-border rounded-lg overflow-hidden">
+          <ScrollArea className="h-80">
+            <div className="divide-y divide-border">
+              {chatMessages.map((msg) => {
+                const session = sessions.find(s => s.id === msg.session_id);
+                return (
+                  <div key={msg.id} className="px-4 py-3 hover:bg-secondary/50 transition-colors">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-mono text-xs text-primary">
+                        {msg.session_id.slice(0, 8)}...
+                        {session?.role === 'admin' && (
+                          <span className="ml-2 px-1.5 py-0.5 bg-primary/20 rounded text-primary">Admin</span>
+                        )}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {formatDate(msg.created_at)}
+                      </span>
+                    </div>
+                    <p className="text-sm">{msg.message}</p>
+                  </div>
+                );
+              })}
+              {chatMessages.length === 0 && (
+                <div className="px-4 py-8 text-center text-muted-foreground">
+                  No chat messages yet
+                </div>
+              )}
+            </div>
+          </ScrollArea>
         </div>
       </section>
     </div>

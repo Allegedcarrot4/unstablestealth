@@ -8,9 +8,11 @@ import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { MainLayout } from "./layouts/MainLayout";
 import { Embedder } from "./pages/Embedder";
 import { Proxy } from "./pages/Proxy";
+import { Browser } from "./pages/Browser";
 import { Settings } from "./pages/Settings";
 import { Login } from "./pages/Login";
 import { Admin } from "./pages/Admin";
+import { GlobalChat } from "./components/GlobalChat";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -77,6 +79,7 @@ const App = () => (
           <Toaster />
           <Sonner />
           <BrowserRouter>
+            <GlobalChat />
             <Routes>
               <Route path="/login" element={<LoginRoute />} />
               <Route element={
@@ -84,9 +87,10 @@ const App = () => (
                   <MainLayout />
                 </ProtectedRoute>
               }>
-                <Route path="/" element={<Embedder />} />
-                <Route path="/proxy" element={<Proxy />} />
-                <Route path="/settings" element={<Settings />} />
+              <Route path="/" element={<Embedder />} />
+              <Route path="/proxy" element={<Proxy />} />
+              <Route path="/browser" element={<Browser />} />
+              <Route path="/settings" element={<Settings />} />
                 <Route path="/admin" element={
                   <AdminRoute>
                     <Admin />
