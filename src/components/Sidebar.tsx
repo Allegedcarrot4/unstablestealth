@@ -5,10 +5,12 @@ import {
   Settings, 
   ChevronLeft, 
   ChevronRight,
-  Zap
+  Zap,
+  Crown
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSettings } from '@/contexts/SettingsContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { Clock } from './Clock';
 import { Button } from './ui/button';
 import { useState } from 'react';
@@ -22,7 +24,12 @@ const navItems = [
 export const Sidebar = () => {
   const location = useLocation();
   const { settings, triggerPanic } = useSettings();
+  const { isAdmin } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
+
+  const allNavItems = isAdmin 
+    ? [...navItems, { path: '/admin', icon: Crown, label: 'Admin' }]
+    : navItems;
 
   return (
     <aside 
@@ -57,7 +64,7 @@ export const Sidebar = () => {
 
       {/* Navigation */}
       <nav className="flex-1 p-3 space-y-2">
-        {navItems.map((item) => {
+        {allNavItems.map((item) => {
           const isActive = location.pathname === item.path;
           return (
             <Link

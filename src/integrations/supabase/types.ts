@@ -14,7 +14,65 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      banned_devices: {
+        Row: {
+          banned_at: string
+          banned_by: string | null
+          device_id: string
+          id: string
+          reason: string | null
+        }
+        Insert: {
+          banned_at?: string
+          banned_by?: string | null
+          device_id: string
+          id?: string
+          reason?: string | null
+        }
+        Update: {
+          banned_at?: string
+          banned_by?: string | null
+          device_id?: string
+          id?: string
+          reason?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "banned_devices_banned_by_fkey"
+            columns: ["banned_by"]
+            isOneToOne: false
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sessions: {
+        Row: {
+          created_at: string
+          device_id: string
+          id: string
+          is_banned: boolean
+          last_active_at: string
+          role: Database["public"]["Enums"]["app_role"]
+        }
+        Insert: {
+          created_at?: string
+          device_id: string
+          id?: string
+          is_banned?: boolean
+          last_active_at?: string
+          role?: Database["public"]["Enums"]["app_role"]
+        }
+        Update: {
+          created_at?: string
+          device_id?: string
+          id?: string
+          is_banned?: boolean
+          last_active_at?: string
+          role?: Database["public"]["Enums"]["app_role"]
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -23,7 +81,7 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      app_role: "user" | "admin"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +208,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["user", "admin"],
+    },
   },
 } as const
