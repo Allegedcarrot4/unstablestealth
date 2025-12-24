@@ -1,5 +1,7 @@
-import { Settings as SettingsIcon, Palette, Clock, AlertTriangle, PanelLeft } from 'lucide-react';
+import { Settings as SettingsIcon, Palette, Clock, AlertTriangle, PanelLeft, LogOut } from 'lucide-react';
 import { useSettings } from '@/contexts/SettingsContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -15,6 +17,13 @@ const themes = [
 
 export const Settings = () => {
   const { settings, updateSettings } = useSettings();
+  const { logout } = useAuth();
+  const navigate = useNavigate();
+
+  const handleLogout = async () => {
+    await logout();
+    navigate('/login');
+  };
 
   return (
     <div className="p-6 max-w-2xl mx-auto animate-fade-in space-y-8">
@@ -130,6 +139,22 @@ export const Settings = () => {
             Test Panic Button
           </Button>
         </div>
+      </section>
+
+      {/* Logout */}
+      <section className="space-y-4">
+        <div className="flex items-center gap-2">
+          <LogOut className="h-5 w-5 text-muted-foreground" />
+          <h2 className="font-mono font-bold">Session</h2>
+        </div>
+        <Button
+          variant="outline"
+          onClick={handleLogout}
+          className="w-full gap-2"
+        >
+          <LogOut className="h-4 w-4" />
+          Logout
+        </Button>
       </section>
     </div>
   );
