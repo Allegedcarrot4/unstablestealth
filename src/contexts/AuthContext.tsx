@@ -6,6 +6,7 @@ interface Session {
   device_id: string;
   role: 'user' | 'admin';
   is_banned: boolean;
+  username?: string;
 }
 
 interface AuthContextType {
@@ -14,7 +15,9 @@ interface AuthContextType {
   isLoggedIn: boolean;
   isAdmin: boolean;
   isBanned: boolean;
-  login: (password: string) => Promise<{ success: boolean; error?: string }>;
+  needsUsername: boolean;
+  login: (password: string) => Promise<{ success: boolean; error?: string; needsUsername?: boolean }>;
+  setUsername: (username: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
   checkBanStatus: () => Promise<boolean>;
 }
@@ -34,6 +37,7 @@ const getDeviceId = (): string => {
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [needsUsername, setNeedsUsername] = useState(false);
 
   const checkBanStatus = useCallback(async (): Promise<boolean> => {
     const deviceId = getDeviceId();
@@ -68,12 +72,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .maybeSingle();
       
       if (existingSession && !existingSession.is_banned) {
+        // Check for profile/username
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('username')
+          .eq('session_id', existingSession.id)
+          .maybeSingle();
+        
         setSession({
           id: existingSession.id,
           device_id: existingSession.device_id,
           role: existingSession.role as 'user' | 'admin',
-          is_banned: existingSession.is_banned
+          is_banned: existingSession.is_banned,
+          username: profile?.username
         });
+        
+        if (!profile?.username) {
+          setNeedsUsername(true);
+        }
         
         // Update last active
         await supabase
@@ -88,7 +104,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     checkSession();
   }, [checkBanStatus]);
 
-  const login = async (password: string): Promise<{ success: boolean; error?: string }> => {
+  const login = async (password: string): Promise<{ success: boolean; error?: string; needsUsername?: boolean }> => {
     const deviceId = getDeviceId();
     
     // Check if banned
@@ -114,6 +130,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       .eq('device_id', deviceId)
       .maybeSingle();
     
+    let sessionData;
+    
     if (existingSession) {
       // Update existing session
       const { data, error } = await supabase
@@ -126,13 +144,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (error) {
         return { success: false, error: 'Failed to update session.' };
       }
-      
-      setSession({
-        id: data.id,
-        device_id: data.device_id,
-        role: data.role as 'user' | 'admin',
-        is_banned: data.is_banned
-      });
+      sessionData = data;
     } else {
       // Create new session
       const { data, error } = await supabase
@@ -144,14 +156,72 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (error) {
         return { success: false, error: 'Failed to create session.' };
       }
-      
-      setSession({
-        id: data.id,
-        device_id: data.device_id,
-        role: data.role as 'user' | 'admin',
-        is_banned: data.is_banned
-      });
+      sessionData = data;
     }
+    
+    // Check for existing profile
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('username')
+      .eq('session_id', sessionData.id)
+      .maybeSingle();
+    
+    setSession({
+      id: sessionData.id,
+      device_id: sessionData.device_id,
+      role: sessionData.role as 'user' | 'admin',
+      is_banned: sessionData.is_banned,
+      username: profile?.username
+    });
+    
+    if (!profile?.username) {
+      setNeedsUsername(true);
+      return { success: true, needsUsername: true };
+    }
+    
+    return { success: true };
+  };
+
+  const setUsername = async (username: string): Promise<{ success: boolean; error?: string }> => {
+    if (!session) {
+      return { success: false, error: 'No active session' };
+    }
+    
+    const trimmedUsername = username.trim();
+    if (trimmedUsername.length < 2 || trimmedUsername.length > 20) {
+      return { success: false, error: 'Username must be 2-20 characters' };
+    }
+    
+    // Check if profile exists
+    const { data: existingProfile } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('session_id', session.id)
+      .maybeSingle();
+    
+    if (existingProfile) {
+      // Update username
+      const { error } = await supabase
+        .from('profiles')
+        .update({ username: trimmedUsername })
+        .eq('session_id', session.id);
+      
+      if (error) {
+        return { success: false, error: 'Failed to update username' };
+      }
+    } else {
+      // Create profile
+      const { error } = await supabase
+        .from('profiles')
+        .insert({ session_id: session.id, username: trimmedUsername });
+      
+      if (error) {
+        return { success: false, error: 'Failed to save username' };
+      }
+    }
+    
+    setSession(prev => prev ? { ...prev, username: trimmedUsername } : null);
+    setNeedsUsername(false);
     
     return { success: true };
   };
@@ -165,6 +235,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       .eq('device_id', deviceId);
     
     setSession(null);
+    setNeedsUsername(false);
   };
 
   return (
@@ -172,10 +243,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       value={{ 
         session, 
         isLoading, 
-        isLoggedIn: !!session && !session.is_banned,
+        isLoggedIn: !!session && !session.is_banned && !!session.username,
         isAdmin: session?.role === 'admin',
         isBanned: session?.is_banned ?? false,
-        login, 
+        needsUsername,
+        login,
+        setUsername,
         logout,
         checkBanStatus
       }}

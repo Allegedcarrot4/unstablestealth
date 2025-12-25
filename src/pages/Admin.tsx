@@ -30,10 +30,16 @@ interface ChatMessage {
   created_at: string;
 }
 
+interface Profile {
+  session_id: string;
+  username: string;
+}
+
 export const Admin = () => {
   const [sessions, setSessions] = useState<SessionData[]>([]);
   const [bannedDevices, setBannedDevices] = useState<BannedDevice[]>([]);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [profiles, setProfiles] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
   const { session: currentSession } = useAuth();
   const { toast } = useToast();
@@ -41,10 +47,11 @@ export const Admin = () => {
   const fetchData = async () => {
     setIsLoading(true);
     
-    const [sessionsRes, bannedRes, messagesRes] = await Promise.all([
+    const [sessionsRes, bannedRes, messagesRes, profilesRes] = await Promise.all([
       supabase.from('sessions').select('*').order('last_active_at', { ascending: false }),
       supabase.from('banned_devices').select('*').order('banned_at', { ascending: false }),
-      supabase.from('chat_messages').select('*').order('created_at', { ascending: false }).limit(100)
+      supabase.from('chat_messages').select('*').order('created_at', { ascending: false }).limit(100),
+      supabase.from('profiles').select('session_id, username')
     ]);
     
     if (sessionsRes.data) {
@@ -55,6 +62,13 @@ export const Admin = () => {
     }
     if (messagesRes.data) {
       setChatMessages(messagesRes.data);
+    }
+    if (profilesRes.data) {
+      const profileMap: Record<string, string> = {};
+      profilesRes.data.forEach((p: Profile) => {
+        profileMap[p.session_id] = p.username;
+      });
+      setProfiles(profileMap);
     }
     
     setIsLoading(false);
@@ -147,6 +161,10 @@ export const Admin = () => {
     return new Date(dateString).toLocaleString();
   };
 
+  const getUsername = (sessionId: string) => {
+    return profiles[sessionId] || 'Unknown';
+  };
+
   return (
     <div className="p-6 max-w-4xl mx-auto animate-fade-in space-y-8">
       {/* Header */}
@@ -182,6 +200,7 @@ export const Admin = () => {
           <table className="w-full">
             <thead className="bg-secondary">
               <tr>
+                <th className="px-4 py-3 text-left text-xs font-mono text-muted-foreground">Username</th>
                 <th className="px-4 py-3 text-left text-xs font-mono text-muted-foreground">Device ID</th>
                 <th className="px-4 py-3 text-left text-xs font-mono text-muted-foreground">Role</th>
                 <th className="px-4 py-3 text-left text-xs font-mono text-muted-foreground">Status</th>
@@ -198,11 +217,14 @@ export const Admin = () => {
                     sess.device_id === currentSession?.device_id && "bg-primary/5"
                   )}
                 >
-                  <td className="px-4 py-3 font-mono text-sm">
-                    {sess.device_id.slice(0, 8)}...
+                  <td className="px-4 py-3 font-medium">
+                    {getUsername(sess.id)}
                     {sess.device_id === currentSession?.device_id && (
                       <span className="ml-2 text-xs text-primary">(You)</span>
                     )}
+                  </td>
+                  <td className="px-4 py-3 font-mono text-sm text-muted-foreground">
+                    {sess.device_id.slice(0, 8)}...
                   </td>
                   <td className="px-4 py-3">
                     <span className={cn(
@@ -249,7 +271,7 @@ export const Admin = () => {
               ))}
               {sessions.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
+                  <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
                     No active sessions
                   </td>
                 </tr>
@@ -304,6 +326,7 @@ export const Admin = () => {
           </table>
         </div>
       </section>
+
       {/* Chat Messages */}
       <section className="space-y-4">
         <div className="flex items-center gap-2">
@@ -315,21 +338,22 @@ export const Admin = () => {
           <ScrollArea className="h-80">
             <div className="divide-y divide-border">
               {chatMessages.map((msg) => {
-                const session = sessions.find(s => s.id === msg.session_id);
+                const sessionData = sessions.find(s => s.id === msg.session_id);
+                const username = getUsername(msg.session_id);
                 return (
                   <div key={msg.id} className="px-4 py-3 hover:bg-secondary/50 transition-colors">
                     <div className="flex items-center justify-between mb-1">
-                      <span className="font-mono text-xs text-primary">
-                        {msg.session_id.slice(0, 8)}...
-                        {session?.role === 'admin' && (
-                          <span className="ml-2 px-1.5 py-0.5 bg-primary/20 rounded text-primary">Admin</span>
+                      <span className="font-medium text-sm">
+                        {username}
+                        {sessionData?.role === 'admin' && (
+                          <span className="ml-2 px-1.5 py-0.5 bg-primary/20 rounded text-xs text-primary">Admin</span>
                         )}
                       </span>
                       <span className="text-xs text-muted-foreground">
                         {formatDate(msg.created_at)}
                       </span>
                     </div>
-                    <p className="text-sm">{msg.message}</p>
+                    <p className="text-sm text-muted-foreground">{msg.message}</p>
                   </div>
                 );
               })}
