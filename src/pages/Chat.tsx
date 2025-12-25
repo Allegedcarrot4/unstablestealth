@@ -13,6 +13,11 @@ interface ChatMessage {
   created_at: string;
 }
 
+interface Profile {
+  session_id: string;
+  username: string;
+}
+
 const generateColor = (str: string) => {
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
@@ -22,23 +27,9 @@ const generateColor = (str: string) => {
   return `hsl(${hue}, 70%, 60%)`;
 };
 
-const generateName = (sessionId: string) => {
-  const adjectives = ['Happy', 'Clever', 'Swift', 'Bright', 'Cool', 'Epic', 'Lucky', 'Wild'];
-  const nouns = ['Fox', 'Bear', 'Wolf', 'Eagle', 'Tiger', 'Lion', 'Hawk', 'Deer'];
-  
-  let hash = 0;
-  for (let i = 0; i < sessionId.length; i++) {
-    hash = sessionId.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  
-  const adjIndex = Math.abs(hash) % adjectives.length;
-  const nounIndex = Math.abs(hash >> 8) % nouns.length;
-  
-  return `${adjectives[adjIndex]}${nouns[nounIndex]}`;
-};
-
 export const Chat = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [profiles, setProfiles] = useState<Record<string, string>>({});
   const [newMessage, setNewMessage] = useState('');
   const [onlineCount, setOnlineCount] = useState(1);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -46,6 +37,7 @@ export const Chat = () => {
 
   useEffect(() => {
     fetchMessages();
+    fetchProfiles();
     
     const channel = supabase
       .channel('chat-messages')
@@ -58,6 +50,11 @@ export const Chat = () => {
         },
         (payload) => {
           setMessages(prev => [...prev, payload.new as ChatMessage]);
+          // Fetch profile for new message sender if not cached
+          const newMsg = payload.new as ChatMessage;
+          if (!profiles[newMsg.session_id]) {
+            fetchProfileForSession(newMsg.session_id);
+          }
         }
       )
       .subscribe();
@@ -89,6 +86,32 @@ export const Chat = () => {
     if (data) setMessages(data);
   };
 
+  const fetchProfiles = async () => {
+    const { data } = await supabase
+      .from('profiles')
+      .select('session_id, username');
+    
+    if (data) {
+      const profileMap: Record<string, string> = {};
+      data.forEach(p => {
+        profileMap[p.session_id] = p.username;
+      });
+      setProfiles(profileMap);
+    }
+  };
+
+  const fetchProfileForSession = async (sessionId: string) => {
+    const { data } = await supabase
+      .from('profiles')
+      .select('username')
+      .eq('session_id', sessionId)
+      .maybeSingle();
+    
+    if (data?.username) {
+      setProfiles(prev => ({ ...prev, [sessionId]: data.username }));
+    }
+  };
+
   const sendMessage = async () => {
     if (!newMessage.trim() || !session) return;
 
@@ -109,6 +132,10 @@ export const Chat = () => {
 
   const formatTime = (date: string) => {
     return new Date(date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
+  const getUserName = (sessionId: string) => {
+    return profiles[sessionId] || 'Anonymous';
   };
 
   return (
@@ -143,7 +170,7 @@ export const Chat = () => {
           ) : (
             messages.map((msg) => {
               const isOwn = msg.session_id === session?.id;
-              const userName = generateName(msg.session_id);
+              const userName = getUserName(msg.session_id);
               const userColor = generateColor(msg.session_id);
               
               return (

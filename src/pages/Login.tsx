@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Lock, AlertTriangle, Shield } from 'lucide-react';
+import { Lock, AlertTriangle, Shield, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/contexts/AuthContext';
@@ -8,12 +8,13 @@ import { cn } from '@/lib/utils';
 
 export const Login = () => {
   const [password, setPassword] = useState('');
+  const [username, setUsernameInput] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const { login, isBanned } = useAuth();
+  const { login, setUsername, isBanned, needsUsername } = useAuth();
   const navigate = useNavigate();
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setIsLoading(true);
@@ -21,9 +22,27 @@ export const Login = () => {
     const result = await login(password);
     
     if (result.success) {
-      navigate('/');
+      if (!result.needsUsername) {
+        navigate('/');
+      }
     } else {
       setError(result.error || 'Login failed');
+    }
+    
+    setIsLoading(false);
+  };
+
+  const handleUsernameSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setIsLoading(true);
+
+    const result = await setUsername(username);
+    
+    if (result.success) {
+      navigate('/');
+    } else {
+      setError(result.error || 'Failed to set username');
     }
     
     setIsLoading(false);
@@ -49,6 +68,64 @@ export const Login = () => {
     );
   }
 
+  // Username step
+  if (needsUsername) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <div className="w-full max-w-md space-y-8">
+          <div className="text-center space-y-4">
+            <div className="flex justify-center">
+              <div className="p-4 rounded-2xl bg-primary/10 neon-glow border border-primary/30">
+                <User className="h-12 w-12 text-primary" />
+              </div>
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold font-mono text-primary text-glow">
+                CHOOSE USERNAME
+              </h1>
+              <p className="mt-2 text-muted-foreground">Pick a display name for the chat</p>
+            </div>
+          </div>
+
+          <form onSubmit={handleUsernameSubmit} className="space-y-6">
+            <div className="space-y-2">
+              <div className="relative">
+                <User className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                <Input
+                  type="text"
+                  placeholder="Username (2-20 characters)"
+                  value={username}
+                  onChange={(e) => setUsernameInput(e.target.value)}
+                  className={cn(
+                    "pl-10 font-mono h-12 text-lg",
+                    error && "border-destructive"
+                  )}
+                  autoFocus
+                  maxLength={20}
+                  minLength={2}
+                />
+              </div>
+              {error && (
+                <p className="text-destructive text-sm flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4" />
+                  {error}
+                </p>
+              )}
+            </div>
+
+            <Button
+              type="submit"
+              className="w-full h-12 text-lg font-mono"
+              disabled={isLoading || username.trim().length < 2}
+            >
+              {isLoading ? 'SAVING...' : 'CONTINUE'}
+            </Button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="w-full max-w-md space-y-8">
@@ -68,7 +145,7 @@ export const Login = () => {
         </div>
 
         {/* Login Form */}
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handlePasswordSubmit} className="space-y-6">
           <div className="space-y-2">
             <div className="relative">
               <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
