@@ -1,13 +1,12 @@
 import { Link, useLocation } from 'react-router-dom';
 import { 
   Globe, 
-  Shield, 
   Settings, 
   ChevronLeft, 
   ChevronRight,
   Zap,
   Crown,
-  Chrome
+  MessageCircle
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSettings } from '@/contexts/SettingsContext';
@@ -18,8 +17,7 @@ import { useState } from 'react';
 
 const navItems = [
   { path: '/', icon: Globe, label: 'Embedder' },
-  { path: '/proxy', icon: Shield, label: 'Proxy' },
-  { path: '/browser', icon: Chrome, label: 'Browser' },
+  { path: '/chat', icon: MessageCircle, label: 'Chat' },
   { path: '/settings', icon: Settings, label: 'Settings' },
 ];
 
@@ -30,7 +28,7 @@ export const Sidebar = () => {
   const [collapsed, setCollapsed] = useState(false);
 
   const allNavItems = isAdmin 
-    ? [...navItems, { path: '/admin', icon: Crown, label: 'Admin' }]
+    ? [...navItems.slice(0, 2), { path: '/admin', icon: Crown, label: 'Admin' }, ...navItems.slice(2)]
     : navItems;
 
   return (
@@ -67,7 +65,8 @@ export const Sidebar = () => {
       {/* Navigation */}
       <nav className="flex-1 p-3 space-y-2">
         {allNavItems.map((item) => {
-          const isActive = location.pathname === item.path;
+          const isActive = location.pathname === item.path || 
+            (item.path === '/' && location.pathname === '/embedder');
           return (
             <Link
               key={item.path}
