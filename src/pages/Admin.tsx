@@ -35,6 +35,15 @@ interface Profile {
   username: string;
 }
 
+const getDeviceId = (): string => {
+  let deviceId = localStorage.getItem('deviceId');
+  if (!deviceId) {
+    deviceId = crypto.randomUUID();
+    localStorage.setItem('deviceId', deviceId);
+  }
+  return deviceId;
+};
+
 export const Admin = () => {
   const [sessions, setSessions] = useState<SessionData[]>([]);
   const [bannedDevices, setBannedDevices] = useState<BannedDevice[]>([]);
@@ -47,39 +56,63 @@ export const Admin = () => {
   const fetchData = async () => {
     setIsLoading(true);
     
-    const [sessionsRes, bannedRes, messagesRes, profilesRes] = await Promise.all([
-      supabase.from('sessions').select('*').order('last_active_at', { ascending: false }),
-      supabase.from('banned_devices').select('*').order('banned_at', { ascending: false }),
-      supabase.from('chat_messages').select('*').order('created_at', { ascending: false }).limit(100),
-      supabase.from('profiles').select('session_id, username')
-    ]);
-    
-    if (sessionsRes.data) {
-      setSessions(sessionsRes.data);
-    }
-    if (bannedRes.data) {
-      setBannedDevices(bannedRes.data);
-    }
-    if (messagesRes.data) {
-      setChatMessages(messagesRes.data);
-    }
-    if (profilesRes.data) {
+    try {
+      const device_id = getDeviceId();
+      
+      // Fetch admin data through secure edge function
+      const { data, error } = await supabase.functions.invoke('admin-data', {
+        body: { device_id }
+      });
+
+      if (error) {
+        console.error('Admin data fetch error:', error);
+        toast({
+          title: "Error fetching data",
+          description: error.message,
+          variant: "destructive"
+        });
+        return;
+      }
+
+      if (data?.error) {
+        console.error('Admin data error:', data.error);
+        toast({
+          title: "Access denied",
+          description: data.error,
+          variant: "destructive"
+        });
+        return;
+      }
+
+      setSessions(data.sessions || []);
+      setBannedDevices(data.bannedDevices || []);
+      setChatMessages(data.chatMessages || []);
+      
+      // Build profile map
       const profileMap: Record<string, string> = {};
-      profilesRes.data.forEach((p: Profile) => {
+      (data.profiles || []).forEach((p: Profile) => {
         profileMap[p.session_id] = p.username;
       });
       setProfiles(profileMap);
+      
+    } catch (err) {
+      console.error('Fetch error:', err);
+      toast({
+        title: "Error",
+        description: "Failed to fetch admin data",
+        variant: "destructive"
+      });
+    } finally {
+      setIsLoading(false);
     }
-    
-    setIsLoading(false);
   };
 
   useEffect(() => {
     fetchData();
   }, []);
 
-  const banDevice = async (deviceId: string) => {
-    if (deviceId === currentSession?.device_id) {
+  const banDevice = async (targetDeviceId: string) => {
+    if (targetDeviceId === currentSession?.device_id) {
       toast({
         title: "Cannot ban yourself",
         variant: "destructive"
@@ -87,57 +120,99 @@ export const Admin = () => {
       return;
     }
 
-    const { error: banError } = await supabase
-      .from('banned_devices')
-      .insert({ 
-        device_id: deviceId, 
-        banned_by: currentSession?.id 
+    try {
+      const device_id = getDeviceId();
+      
+      const { data, error } = await supabase.functions.invoke('admin-operations', {
+        body: { 
+          action: 'ban_device',
+          device_id,
+          target_device_id: targetDeviceId
+        }
       });
-    
-    if (banError) {
+
+      if (error) {
+        toast({
+          title: "Failed to ban device",
+          description: error.message,
+          variant: "destructive"
+        });
+        return;
+      }
+
+      if (data?.error) {
+        toast({
+          title: "Failed to ban device",
+          description: data.error,
+          variant: "destructive"
+        });
+        return;
+      }
+
       toast({
-        title: "Failed to ban device",
-        description: banError.message,
+        title: "Device banned",
+        description: `Device ${targetDeviceId.slice(0, 8)}... has been banned.`
+      });
+
+      fetchData();
+    } catch (err) {
+      console.error('Ban error:', err);
+      toast({
+        title: "Error",
+        description: "Failed to ban device",
         variant: "destructive"
       });
-      return;
     }
-
-    // Update session to mark as banned
-    await supabase
-      .from('sessions')
-      .update({ is_banned: true })
-      .eq('device_id', deviceId);
-
-    toast({
-      title: "Device banned",
-      description: `Device ${deviceId.slice(0, 8)}... has been banned.`
-    });
-
-    fetchData();
   };
 
-  const unbanDevice = async (deviceId: string) => {
-    await supabase
-      .from('banned_devices')
-      .delete()
-      .eq('device_id', deviceId);
+  const unbanDevice = async (targetDeviceId: string) => {
+    try {
+      const device_id = getDeviceId();
+      
+      const { data, error } = await supabase.functions.invoke('admin-operations', {
+        body: { 
+          action: 'unban_device',
+          device_id,
+          target_device_id: targetDeviceId
+        }
+      });
 
-    await supabase
-      .from('sessions')
-      .update({ is_banned: false })
-      .eq('device_id', deviceId);
+      if (error) {
+        toast({
+          title: "Failed to unban device",
+          description: error.message,
+          variant: "destructive"
+        });
+        return;
+      }
 
-    toast({
-      title: "Device unbanned",
-      description: `Device ${deviceId.slice(0, 8)}... has been unbanned.`
-    });
+      if (data?.error) {
+        toast({
+          title: "Failed to unban device",
+          description: data.error,
+          variant: "destructive"
+        });
+        return;
+      }
 
-    fetchData();
+      toast({
+        title: "Device unbanned",
+        description: `Device ${targetDeviceId.slice(0, 8)}... has been unbanned.`
+      });
+
+      fetchData();
+    } catch (err) {
+      console.error('Unban error:', err);
+      toast({
+        title: "Error",
+        description: "Failed to unban device",
+        variant: "destructive"
+      });
+    }
   };
 
-  const deleteSession = async (sessionId: string, deviceId: string) => {
-    if (deviceId === currentSession?.device_id) {
+  const deleteSession = async (sessionId: string, targetDeviceId: string) => {
+    if (targetDeviceId === currentSession?.device_id) {
       toast({
         title: "Cannot delete your own session",
         variant: "destructive"
@@ -145,16 +220,49 @@ export const Admin = () => {
       return;
     }
 
-    await supabase
-      .from('sessions')
-      .delete()
-      .eq('id', sessionId);
+    try {
+      const device_id = getDeviceId();
+      
+      const { data, error } = await supabase.functions.invoke('admin-operations', {
+        body: { 
+          action: 'delete_session',
+          device_id,
+          target_session_id: sessionId,
+          target_device_id: targetDeviceId
+        }
+      });
 
-    toast({
-      title: "Session deleted"
-    });
+      if (error) {
+        toast({
+          title: "Failed to delete session",
+          description: error.message,
+          variant: "destructive"
+        });
+        return;
+      }
 
-    fetchData();
+      if (data?.error) {
+        toast({
+          title: "Failed to delete session",
+          description: data.error,
+          variant: "destructive"
+        });
+        return;
+      }
+
+      toast({
+        title: "Session deleted"
+      });
+
+      fetchData();
+    } catch (err) {
+      console.error('Delete error:', err);
+      toast({
+        title: "Error",
+        description: "Failed to delete session",
+        variant: "destructive"
+      });
+    }
   };
 
   const formatDate = (dateString: string) => {
