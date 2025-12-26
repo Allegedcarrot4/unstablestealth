@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { supabase } from '@/integrations/supabase/client';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -13,6 +14,15 @@ interface Message {
 
 const DAILY_LIMIT = 10;
 const STORAGE_KEY = 'ai_daily_usage';
+
+const getDeviceId = (): string => {
+  let deviceId = localStorage.getItem('deviceId');
+  if (!deviceId) {
+    deviceId = crypto.randomUUID();
+    localStorage.setItem('deviceId', deviceId);
+  }
+  return deviceId;
+};
 
 const getUsageData = () => {
   const stored = localStorage.getItem(STORAGE_KEY);
@@ -65,38 +75,36 @@ export const AI = () => {
     setIsLoading(true);
 
     try {
-      const API_KEY = 'a81500fd3777467c8ba9ff64f2c6d8fe';
+      const device_id = getDeviceId();
       
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${API_KEY}`,
+      // Build the messages array for Gemini format
+      const geminiMessages = [
+        ...messages.map(msg => ({
+          role: msg.role === 'user' ? 'user' : 'model',
+          parts: [{ text: msg.content }]
+        })),
         {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            contents: [
-              ...messages.map(msg => ({
-                role: msg.role === 'user' ? 'user' : 'model',
-                parts: [{ text: msg.content }]
-              })),
-              {
-                role: 'user',
-                parts: [{ text: userMessage.content }]
-              }
-            ]
-          }),
+          role: 'user',
+          parts: [{ text: userMessage.content }]
         }
-      );
+      ];
 
-      if (!response.ok) {
-        throw new Error('Failed to get response');
+      // Call the secure edge function instead of direct API
+      const { data, error } = await supabase.functions.invoke('ai-chat', {
+        body: { messages: geminiMessages, device_id }
+      });
+
+      if (error) {
+        throw new Error(error.message || 'Failed to get response');
       }
 
-      const data = await response.json();
+      if (data?.error) {
+        throw new Error(data.error);
+      }
+
       const assistantMessage: Message = {
         role: 'assistant',
-        content: data.candidates?.[0]?.content?.parts?.[0]?.text || 'No response received'
+        content: data?.candidates?.[0]?.content?.parts?.[0]?.text || 'No response received'
       };
 
       setMessages(prev => [...prev, assistantMessage]);
@@ -110,7 +118,7 @@ export const AI = () => {
       console.error('AI error:', error);
       toast({
         title: "Error",
-        description: "Failed to get AI response. Please try again.",
+        description: error instanceof Error ? error.message : "Failed to get AI response. Please try again.",
         variant: "destructive"
       });
       // Remove the user message if we failed
