@@ -115,12 +115,33 @@ export const Chat = () => {
   const sendMessage = async () => {
     if (!newMessage.trim() || !session) return;
 
-    await supabase.from('chat_messages').insert({
-      message: newMessage.trim(),
-      session_id: session.id
-    });
+    // Get device_id from localStorage for server-side verification
+    const deviceId = localStorage.getItem('deviceId');
+    if (!deviceId) {
+      console.error('No device ID found');
+      return;
+    }
 
-    setNewMessage('');
+    try {
+      // Use edge function for secure message insertion (prevents impersonation)
+      const response = await supabase.functions.invoke('send-chat-message', {
+        body: { message: newMessage.trim(), device_id: deviceId }
+      });
+
+      if (response.error) {
+        console.error('Failed to send message:', response.error);
+        return;
+      }
+
+      if (response.data?.error) {
+        console.error('Message error:', response.data.error);
+        return;
+      }
+
+      setNewMessage('');
+    } catch (error) {
+      console.error('Error sending message:', error);
+    }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {

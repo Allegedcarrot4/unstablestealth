@@ -107,79 +107,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const login = async (password: string): Promise<{ success: boolean; error?: string; needsUsername?: boolean }> => {
     const deviceId = getDeviceId();
     
-    // Check if banned
-    const isBanned = await checkBanStatus();
-    if (isBanned) {
-      return { success: false, error: 'Your device has been banned.' };
-    }
-    
-    // Check passwords
-    const isAdmin = password === 'helloadmin5*';
-    const isUser = password === 'MCGSUCKS123';
-    
-    if (!isAdmin && !isUser) {
-      return { success: false, error: 'Invalid password.' };
-    }
-    
-    const role = isAdmin ? 'admin' : 'user';
-    
-    // Check if session already exists
-    const { data: existingSession } = await supabase
-      .from('sessions')
-      .select('*')
-      .eq('device_id', deviceId)
-      .maybeSingle();
-    
-    let sessionData;
-    
-    if (existingSession) {
-      // Update existing session
-      const { data, error } = await supabase
-        .from('sessions')
-        .update({ role, last_active_at: new Date().toISOString() })
-        .eq('id', existingSession.id)
-        .select()
-        .single();
-      
-      if (error) {
-        return { success: false, error: 'Failed to update session.' };
+    try {
+      // Call server-side authentication (passwords verified server-side)
+      const response = await supabase.functions.invoke('authenticate', {
+        body: { password, device_id: deviceId }
+      });
+
+      if (response.error) {
+        console.error('Auth function error:', response.error);
+        return { success: false, error: 'Authentication failed. Please try again.' };
       }
-      sessionData = data;
-    } else {
-      // Create new session
-      const { data, error } = await supabase
-        .from('sessions')
-        .insert({ device_id: deviceId, role })
-        .select()
-        .single();
-      
-      if (error) {
-        return { success: false, error: 'Failed to create session.' };
+
+      const data = response.data;
+
+      if (data.error) {
+        return { success: false, error: data.error };
       }
-      sessionData = data;
+
+      setSession({
+        id: data.session.id,
+        device_id: data.session.device_id,
+        role: data.session.role as 'user' | 'admin',
+        is_banned: data.session.is_banned,
+        username: data.session.username
+      });
+
+      if (data.needsUsername) {
+        setNeedsUsername(true);
+        return { success: true, needsUsername: true };
+      }
+
+      return { success: true };
+    } catch (error) {
+      console.error('Login error:', error);
+      return { success: false, error: 'Authentication failed. Please try again.' };
     }
-    
-    // Check for existing profile
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('username')
-      .eq('session_id', sessionData.id)
-      .maybeSingle();
-    
-    setSession({
-      id: sessionData.id,
-      device_id: sessionData.device_id,
-      role: sessionData.role as 'user' | 'admin',
-      is_banned: sessionData.is_banned,
-      username: profile?.username
-    });
-    
-    if (!profile?.username) {
-      setNeedsUsername(true);
-      return { success: true, needsUsername: true };
-    }
-    
-    return { success: true };
   };
 
   const setUsername = async (username: string): Promise<{ success: boolean; error?: string }> => {
