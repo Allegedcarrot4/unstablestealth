@@ -1,0 +1,199 @@
+import { useState, useEffect } from 'react';
+import { Send, Sparkles, AlertCircle } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { useToast } from '@/hooks/use-toast';
+import { cn } from '@/lib/utils';
+
+interface Message {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+const DAILY_LIMIT = 10;
+const STORAGE_KEY = 'ai_daily_usage';
+
+const getUsageData = () => {
+  const stored = localStorage.getItem(STORAGE_KEY);
+  if (!stored) return { date: new Date().toDateString(), count: 0 };
+  
+  const data = JSON.parse(stored);
+  // Reset if it's a new day
+  if (data.date !== new Date().toDateString()) {
+    return { date: new Date().toDateString(), count: 0 };
+  }
+  return data;
+};
+
+const saveUsageData = (count: number) => {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({
+    date: new Date().toDateString(),
+    count
+  }));
+};
+
+export const AI = () => {
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [questionsUsed, setQuestionsUsed] = useState(0);
+  const { toast } = useToast();
+
+  useEffect(() => {
+    const usage = getUsageData();
+    setQuestionsUsed(usage.count);
+  }, []);
+
+  const questionsRemaining = DAILY_LIMIT - questionsUsed;
+
+  const sendMessage = async () => {
+    if (!input.trim() || isLoading) return;
+
+    if (questionsRemaining <= 0) {
+      toast({
+        title: "Daily limit reached",
+        description: "You've used all 10 questions for today. Come back tomorrow!",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const userMessage: Message = { role: 'user', content: input.trim() };
+    setMessages(prev => [...prev, userMessage]);
+    setInput('');
+    setIsLoading(true);
+
+    try {
+      // Replace YOUR_API_KEY with your actual Gemini API key
+      const API_KEY = 'YOUR_API_KEY';
+      
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${API_KEY}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            contents: [
+              ...messages.map(msg => ({
+                role: msg.role === 'user' ? 'user' : 'model',
+                parts: [{ text: msg.content }]
+              })),
+              {
+                role: 'user',
+                parts: [{ text: userMessage.content }]
+              }
+            ]
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error('Failed to get response');
+      }
+
+      const data = await response.json();
+      const assistantMessage: Message = {
+        role: 'assistant',
+        content: data.candidates?.[0]?.content?.parts?.[0]?.text || 'No response received'
+      };
+
+      setMessages(prev => [...prev, assistantMessage]);
+      
+      // Update usage count
+      const newCount = questionsUsed + 1;
+      setQuestionsUsed(newCount);
+      saveUsageData(newCount);
+
+    } catch (error) {
+      console.error('AI error:', error);
+      toast({
+        title: "Error",
+        description: "Failed to get AI response. Please try again.",
+        variant: "destructive"
+      });
+      // Remove the user message if we failed
+      setMessages(prev => prev.slice(0, -1));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="h-screen flex flex-col p-6">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3">
+          <Sparkles className="h-6 w-6 text-primary" />
+          <h1 className="text-2xl font-bold text-foreground">AI Assistant</h1>
+        </div>
+        <div className={cn(
+          "flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-mono",
+          questionsRemaining > 3 
+            ? "bg-primary/10 text-primary" 
+            : questionsRemaining > 0 
+              ? "bg-yellow-500/10 text-yellow-500"
+              : "bg-destructive/10 text-destructive"
+        )}>
+          <AlertCircle className="h-4 w-4" />
+          {questionsRemaining}/{DAILY_LIMIT} questions left
+        </div>
+      </div>
+
+      {/* Messages */}
+      <ScrollArea className="flex-1 pr-4">
+        <div className="space-y-4">
+          {messages.length === 0 && (
+            <div className="text-center text-muted-foreground py-12">
+              <Sparkles className="h-12 w-12 mx-auto mb-4 opacity-50" />
+              <p>Ask me anything! You have {questionsRemaining} questions remaining today.</p>
+            </div>
+          )}
+          {messages.map((msg, i) => (
+            <div
+              key={i}
+              className={cn(
+                "p-4 rounded-lg max-w-[80%]",
+                msg.role === 'user' 
+                  ? "bg-primary/10 ml-auto" 
+                  : "bg-secondary mr-auto"
+              )}
+            >
+              <p className="text-sm text-foreground whitespace-pre-wrap">{msg.content}</p>
+            </div>
+          ))}
+          {isLoading && (
+            <div className="bg-secondary p-4 rounded-lg max-w-[80%] mr-auto">
+              <div className="flex gap-1">
+                <span className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                <span className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                <span className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+              </div>
+            </div>
+          )}
+        </div>
+      </ScrollArea>
+
+      {/* Input */}
+      <div className="flex gap-2 mt-4 pt-4 border-t border-border">
+        <Input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()}
+          placeholder={questionsRemaining > 0 ? "Ask something..." : "Daily limit reached"}
+          disabled={isLoading || questionsRemaining <= 0}
+          className="flex-1"
+        />
+        <Button 
+          onClick={sendMessage} 
+          disabled={isLoading || !input.trim() || questionsRemaining <= 0}
+          size="icon"
+        >
+          <Send className="h-4 w-4" />
+        </Button>
+      </div>
+    </div>
+  );
+};
