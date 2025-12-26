@@ -1,21 +1,30 @@
 import { useState, useEffect, useRef } from 'react';
-import { MessageCircle, Send, Users } from 'lucide-react';
+import { MessageCircle, Send, Users, Undo2, Trash2, EyeOff, Shield } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { useToast } from '@/hooks/use-toast';
+import { Badge } from '@/components/ui/badge';
 
 interface ChatMessage {
   id: string;
   message: string;
   session_id: string;
   created_at: string;
+  deleted_at?: string | null;
+  hidden_for_session_ids?: string[];
 }
 
 interface Profile {
   session_id: string;
   username: string;
+}
+
+interface SessionRole {
+  session_id: string;
+  role: 'user' | 'admin';
 }
 
 const generateColor = (str: string) => {
@@ -30,14 +39,17 @@ const generateColor = (str: string) => {
 export const Chat = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [profiles, setProfiles] = useState<Record<string, string>>({});
+  const [sessionRoles, setSessionRoles] = useState<Record<string, 'user' | 'admin'>>({});
   const [newMessage, setNewMessage] = useState('');
   const [onlineCount, setOnlineCount] = useState(1);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const { session } = useAuth();
+  const { session, isAdmin } = useAuth();
+  const { toast } = useToast();
 
   useEffect(() => {
     fetchMessages();
     fetchProfiles();
+    fetchSessionRoles();
     
     const channel = supabase
       .channel('chat-messages')
@@ -49,17 +61,27 @@ export const Chat = () => {
           table: 'chat_messages'
         },
         (payload) => {
-          setMessages(prev => [...prev, payload.new as ChatMessage]);
-          // Fetch profile for new message sender if not cached
           const newMsg = payload.new as ChatMessage;
+          setMessages(prev => [...prev, newMsg]);
           if (!profiles[newMsg.session_id]) {
             fetchProfileForSession(newMsg.session_id);
           }
         }
       )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'chat_messages'
+        },
+        (payload) => {
+          const updated = payload.new as ChatMessage;
+          setMessages(prev => prev.map(m => m.id === updated.id ? updated : m));
+        }
+      )
       .subscribe();
 
-    // Simulate online count
     const interval = setInterval(() => {
       setOnlineCount(Math.floor(Math.random() * 5) + 1);
     }, 30000);
@@ -83,7 +105,7 @@ export const Chat = () => {
       .order('created_at', { ascending: true })
       .limit(100);
     
-    if (data) setMessages(data);
+    if (data) setMessages(data as ChatMessage[]);
   };
 
   const fetchProfiles = async () => {
@@ -97,6 +119,20 @@ export const Chat = () => {
         profileMap[p.session_id] = p.username;
       });
       setProfiles(profileMap);
+    }
+  };
+
+  const fetchSessionRoles = async () => {
+    const { data } = await supabase
+      .from('sessions')
+      .select('id, role');
+    
+    if (data) {
+      const rolesMap: Record<string, 'user' | 'admin'> = {};
+      data.forEach((s: { id: string; role: 'user' | 'admin' }) => {
+        rolesMap[s.id] = s.role;
+      });
+      setSessionRoles(rolesMap);
     }
   };
 
@@ -115,7 +151,6 @@ export const Chat = () => {
   const sendMessage = async () => {
     if (!newMessage.trim() || !session) return;
 
-    // Get device_id from localStorage for server-side verification
     const deviceId = localStorage.getItem('deviceId');
     if (!deviceId) {
       console.error('No device ID found');
@@ -123,24 +158,103 @@ export const Chat = () => {
     }
 
     try {
-      // Use edge function for secure message insertion (prevents impersonation)
       const response = await supabase.functions.invoke('send-chat-message', {
         body: { message: newMessage.trim(), device_id: deviceId }
       });
 
-      if (response.error) {
-        console.error('Failed to send message:', response.error);
-        return;
-      }
-
-      if (response.data?.error) {
-        console.error('Message error:', response.data.error);
+      if (response.error || response.data?.error) {
+        toast({
+          title: "Error",
+          description: response.data?.error || "Failed to send message",
+          variant: "destructive"
+        });
         return;
       }
 
       setNewMessage('');
     } catch (error) {
       console.error('Error sending message:', error);
+    }
+  };
+
+  const handleUndo = async (messageId: string) => {
+    const deviceId = localStorage.getItem('deviceId');
+    if (!deviceId) return;
+
+    try {
+      const response = await supabase.functions.invoke('delete-message', {
+        body: { message_id: messageId, device_id: deviceId, action: 'undo' }
+      });
+
+      if (response.error || response.data?.error) {
+        toast({
+          title: "Cannot undo",
+          description: response.data?.error || "Failed to undo message",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      toast({
+        title: "Message undone",
+        description: "Your message has been removed for everyone"
+      });
+    } catch (error) {
+      console.error('Error undoing message:', error);
+    }
+  };
+
+  const handleHide = async (messageId: string) => {
+    const deviceId = localStorage.getItem('deviceId');
+    if (!deviceId) return;
+
+    try {
+      const response = await supabase.functions.invoke('delete-message', {
+        body: { message_id: messageId, device_id: deviceId, action: 'hide' }
+      });
+
+      if (response.error || response.data?.error) {
+        toast({
+          title: "Error",
+          description: response.data?.error || "Failed to hide message",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      toast({
+        title: "Message hidden",
+        description: "This message is now hidden for you"
+      });
+    } catch (error) {
+      console.error('Error hiding message:', error);
+    }
+  };
+
+  const handleAdminDelete = async (messageId: string) => {
+    const deviceId = localStorage.getItem('deviceId');
+    if (!deviceId) return;
+
+    try {
+      const response = await supabase.functions.invoke('delete-message', {
+        body: { message_id: messageId, device_id: deviceId, action: 'delete' }
+      });
+
+      if (response.error || response.data?.error) {
+        toast({
+          title: "Error",
+          description: response.data?.error || "Failed to delete message",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      toast({
+        title: "Message deleted",
+        description: "Message removed for everyone"
+      });
+    } catch (error) {
+      console.error('Error deleting message:', error);
     }
   };
 
@@ -158,6 +272,29 @@ export const Chat = () => {
   const getUserName = (sessionId: string) => {
     return profiles[sessionId] || 'Anonymous';
   };
+
+  const isUserAdmin = (sessionId: string) => {
+    return sessionRoles[sessionId] === 'admin';
+  };
+
+  // Get user's own recent message IDs (last 3)
+  const getOwnRecentMessageIds = () => {
+    if (!session) return [];
+    const ownMessages = messages
+      .filter(m => m.session_id === session.id && !m.deleted_at)
+      .slice(-3)
+      .map(m => m.id);
+    return ownMessages;
+  };
+
+  const ownRecentIds = getOwnRecentMessageIds();
+
+  // Filter out deleted and hidden messages
+  const visibleMessages = messages.filter(msg => {
+    if (msg.deleted_at) return false;
+    if (session && msg.hidden_for_session_ids?.includes(session.id)) return false;
+    return true;
+  });
 
   return (
     <div className="h-screen flex flex-col animate-fade-in">
@@ -183,38 +320,87 @@ export const Chat = () => {
       {/* Messages */}
       <ScrollArea className="flex-1 p-4" ref={scrollRef}>
         <div className="space-y-3">
-          {messages.length === 0 ? (
+          {visibleMessages.length === 0 ? (
             <div className="text-center text-muted-foreground py-12">
               <MessageCircle className="h-12 w-12 mx-auto mb-4 opacity-50" />
               <p>No messages yet. Start the conversation!</p>
             </div>
           ) : (
-            messages.map((msg) => {
+            visibleMessages.map((msg) => {
               const isOwn = msg.session_id === session?.id;
               const userName = getUserName(msg.session_id);
               const userColor = generateColor(msg.session_id);
+              const senderIsAdmin = isUserAdmin(msg.session_id);
+              const canUndo = isOwn && ownRecentIds.includes(msg.id);
               
               return (
                 <div
                   key={msg.id}
-                  className={`flex ${isOwn ? 'justify-end' : 'justify-start'}`}
+                  className={`flex ${isOwn ? 'justify-end' : 'justify-start'} group`}
                 >
-                  <div
-                    className={`max-w-[80%] rounded-2xl px-4 py-2 ${
-                      isOwn
-                        ? 'bg-primary text-primary-foreground rounded-br-md'
-                        : 'bg-secondary text-secondary-foreground rounded-bl-md'
-                    }`}
-                  >
-                    {!isOwn && (
-                      <p className="text-xs font-medium mb-1" style={{ color: userColor }}>
-                        {userName}
+                  <div className="relative">
+                    <div
+                      className={`max-w-[80%] rounded-2xl px-4 py-2 ${
+                        isOwn
+                          ? 'bg-primary text-primary-foreground rounded-br-md'
+                          : 'bg-secondary text-secondary-foreground rounded-bl-md'
+                      }`}
+                    >
+                      {!isOwn && (
+                        <div className="flex items-center gap-2 mb-1">
+                          <p className="text-xs font-medium" style={{ color: userColor }}>
+                            {userName}
+                          </p>
+                          {senderIsAdmin && (
+                            <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 border-amber-500 text-amber-500 bg-amber-500/10">
+                              <Shield className="h-2.5 w-2.5 mr-0.5" />
+                              Admin
+                            </Badge>
+                          )}
+                        </div>
+                      )}
+                      <p className="text-sm break-words">{msg.message}</p>
+                      <p className={`text-xs mt-1 ${isOwn ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
+                        {formatTime(msg.created_at)}
                       </p>
-                    )}
-                    <p className="text-sm break-words">{msg.message}</p>
-                    <p className={`text-xs mt-1 ${isOwn ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
-                      {formatTime(msg.created_at)}
-                    </p>
+                    </div>
+                    
+                    {/* Action buttons */}
+                    <div className={`absolute top-0 ${isOwn ? 'left-0 -translate-x-full pr-2' : 'right-0 translate-x-full pl-2'} opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1`}>
+                      {canUndo && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6"
+                          onClick={() => handleUndo(msg.id)}
+                          title="Undo (remove for everyone)"
+                        >
+                          <Undo2 className="h-3 w-3" />
+                        </Button>
+                      )}
+                      {!isOwn && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6"
+                          onClick={() => handleHide(msg.id)}
+                          title="Hide for me"
+                        >
+                          <EyeOff className="h-3 w-3" />
+                        </Button>
+                      )}
+                      {isAdmin && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 text-destructive hover:text-destructive"
+                          onClick={() => handleAdminDelete(msg.id)}
+                          title="Delete for everyone (Admin)"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 </div>
               );
