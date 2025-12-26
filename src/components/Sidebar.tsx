@@ -6,7 +6,8 @@ import {
   ChevronRight,
   Zap,
   Crown,
-  MessageCircle
+  MessageCircle,
+  Sparkles
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSettings } from '@/contexts/SettingsContext';
@@ -18,6 +19,7 @@ import { useState } from 'react';
 const navItems = [
   { path: '/', icon: Globe, label: 'Embedder' },
   { path: '/chat', icon: MessageCircle, label: 'Chat' },
+  { path: '/ai', icon: Sparkles, label: 'AI' },
   { path: '/settings', icon: Settings, label: 'Settings' },
 ];
 
