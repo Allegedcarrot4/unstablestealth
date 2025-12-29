@@ -4,7 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 interface Session {
   id: string;
   device_id: string;
-  role: 'user' | 'admin';
+  role: 'user' | 'admin' | 'owner';
   is_banned: boolean;
   username?: string;
 }
@@ -14,6 +14,7 @@ interface AuthContextType {
   isLoading: boolean;
   isLoggedIn: boolean;
   isAdmin: boolean;
+  isOwner: boolean;
   isBanned: boolean;
   needsUsername: boolean;
   login: (password: string) => Promise<{ success: boolean; error?: string; needsUsername?: boolean }>;
@@ -82,7 +83,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setSession({
           id: existingSession.id,
           device_id: existingSession.device_id,
-          role: existingSession.role as 'user' | 'admin',
+          role: existingSession.role as 'user' | 'admin' | 'owner',
           is_banned: existingSession.is_banned,
           username: profile?.username
         });
@@ -127,7 +128,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setSession({
         id: data.session.id,
         device_id: data.session.device_id,
-        role: data.session.role as 'user' | 'admin',
+        role: data.session.role as 'user' | 'admin' | 'owner',
         is_banned: data.session.is_banned,
         username: data.session.username
       });
@@ -206,7 +207,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         session, 
         isLoading, 
         isLoggedIn: !!session && !session.is_banned && !!session.username,
-        isAdmin: session?.role === 'admin',
+        isAdmin: session?.role === 'admin' || session?.role === 'owner',
+        isOwner: session?.role === 'owner',
         isBanned: session?.is_banned ?? false,
         needsUsername,
         login,

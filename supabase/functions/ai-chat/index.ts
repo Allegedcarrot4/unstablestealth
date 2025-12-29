@@ -65,14 +65,14 @@ serve(async (req) => {
       );
     }
 
-    const isAdmin = session.role === 'admin';
+    const isAdminOrOwner = session.role === 'admin' || session.role === 'owner';
     
     // Determine which model to use
     let modelToUse = DEFAULT_MODEL;
     
     if (model && ALLOWED_MODELS.includes(model)) {
       // Only admins can use non-default models
-      if (model !== DEFAULT_MODEL && !isAdmin) {
+      if (model !== DEFAULT_MODEL && !isAdminOrOwner) {
         console.log('Non-admin attempted to use premium model');
         modelToUse = DEFAULT_MODEL;
       } else {
@@ -80,7 +80,7 @@ serve(async (req) => {
       }
     }
 
-    console.log(`Using model: ${modelToUse} for ${isAdmin ? 'admin' : 'user'}`);
+    console.log(`Using model: ${modelToUse} for ${isAdminOrOwner ? 'premium user' : 'user'}`);
 
     // Get Lovable API key from environment (auto-provisioned)
     const apiKey = Deno.env.get('LOVABLE_API_KEY');

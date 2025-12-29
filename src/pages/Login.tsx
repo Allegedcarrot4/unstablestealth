@@ -1,18 +1,31 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Lock, AlertTriangle, Shield, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
+
+const SAVED_PASSWORD_KEY = 'saved_password';
 
 export const Login = () => {
   const [password, setPassword] = useState('');
   const [username, setUsernameInput] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [rememberPassword, setRememberPassword] = useState(false);
   const { login, setUsername, isBanned, needsUsername } = useAuth();
   const navigate = useNavigate();
+
+  // Load saved password on mount
+  useEffect(() => {
+    const savedPassword = localStorage.getItem(SAVED_PASSWORD_KEY);
+    if (savedPassword) {
+      setPassword(savedPassword);
+      setRememberPassword(true);
+    }
+  }, []);
 
   const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -22,6 +35,13 @@ export const Login = () => {
     const result = await login(password);
     
     if (result.success) {
+      // Save or remove password based on checkbox
+      if (rememberPassword) {
+        localStorage.setItem(SAVED_PASSWORD_KEY, password);
+      } else {
+        localStorage.removeItem(SAVED_PASSWORD_KEY);
+      }
+      
       if (!result.needsUsername) {
         navigate('/');
       }
@@ -146,7 +166,7 @@ export const Login = () => {
 
         {/* Login Form */}
         <form onSubmit={handlePasswordSubmit} className="space-y-6">
-          <div className="space-y-2">
+          <div className="space-y-4">
             <div className="relative">
               <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
               <Input
@@ -161,6 +181,21 @@ export const Login = () => {
                 autoFocus
               />
             </div>
+            
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="remember"
+                checked={rememberPassword}
+                onCheckedChange={(checked) => setRememberPassword(checked as boolean)}
+              />
+              <label
+                htmlFor="remember"
+                className="text-sm text-muted-foreground cursor-pointer select-none"
+              >
+                Remember password
+              </label>
+            </div>
+            
             {error && (
               <p className="text-destructive text-sm flex items-center gap-2">
                 <AlertTriangle className="h-4 w-4" />

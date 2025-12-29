@@ -24,10 +24,11 @@ serve(async (req) => {
     }
 
     // Get passwords from environment variables (server-side only)
+    const ownerPassword = Deno.env.get('OWNER_PASSWORD');
     const adminPassword = Deno.env.get('ADMIN_PASSWORD');
     const userPassword = Deno.env.get('USER_PASSWORD');
 
-    if (!adminPassword || !userPassword) {
+    if (!ownerPassword || !adminPassword || !userPassword) {
       console.error('Server configuration error: passwords not set');
       return new Response(
         JSON.stringify({ error: 'Server configuration error' }),
@@ -35,11 +36,12 @@ serve(async (req) => {
       );
     }
 
-    // Verify password
+    // Verify password - check owner first, then admin, then user
+    const isOwner = password === ownerPassword;
     const isAdmin = password === adminPassword;
     const isUser = password === userPassword;
 
-    if (!isAdmin && !isUser) {
+    if (!isOwner && !isAdmin && !isUser) {
       console.log('Invalid password attempt for device:', device_id);
       return new Response(
         JSON.stringify({ error: 'Invalid password' }),
@@ -47,7 +49,7 @@ serve(async (req) => {
       );
     }
 
-    const role = isAdmin ? 'admin' : 'user';
+    const role = isOwner ? 'owner' : isAdmin ? 'admin' : 'user';
 
     // Create Supabase client with service role for database operations
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
