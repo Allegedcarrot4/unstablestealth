@@ -6,6 +6,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -30,7 +31,7 @@ const STORAGE_KEY = 'ai_daily_usage';
 // Cheapest model for regular users
 const DEFAULT_MODEL = 'google/gemini-2.5-flash-lite';
 
-// All available models with costs for admins
+// All available models with costs for admins/owners
 const AVAILABLE_MODELS: AIModel[] = [
   { id: 'google/gemini-2.5-flash-lite', name: 'Gemini Flash Lite', cost: '$0.01/1K' },
   { id: 'google/gemini-2.5-flash', name: 'Gemini Flash', cost: '$0.02/1K' },
@@ -74,37 +75,25 @@ export const AI = () => {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [questionsUsed, setQuestionsUsed] = useState(0);
-  const [isAdmin, setIsAdmin] = useState(false);
   const [selectedModel, setSelectedModel] = useState<AIModel>(AVAILABLE_MODELS[0]);
   const { toast } = useToast();
+  const { isAdmin, isOwner } = useAuth();
+
+  // Owners and admins have premium access (model selection + unlimited)
+  const hasPremiumAccess = isAdmin || isOwner;
 
   useEffect(() => {
     const usage = getUsageData();
     setQuestionsUsed(usage.count);
-    
-    // Check if user is admin
-    const checkAdmin = async () => {
-      const deviceId = getDeviceId();
-      const { data: session } = await supabase
-        .from('sessions')
-        .select('role')
-        .eq('device_id', deviceId)
-        .single();
-      
-      if (session?.role === 'admin') {
-        setIsAdmin(true);
-      }
-    };
-    checkAdmin();
   }, []);
 
-  // Admins have unlimited, regular users have daily limit
-  const questionsRemaining = isAdmin ? Infinity : DAILY_LIMIT - questionsUsed;
+  // Premium users have unlimited, regular users have daily limit
+  const questionsRemaining = hasPremiumAccess ? Infinity : DAILY_LIMIT - questionsUsed;
 
   const sendMessage = async () => {
     if (!input.trim() || isLoading) return;
 
-    if (!isAdmin && questionsRemaining <= 0) {
+    if (!hasPremiumAccess && questionsRemaining <= 0) {
       toast({
         title: "Daily limit reached",
         description: "You've used all 10 questions for today. Come back tomorrow!",
@@ -133,8 +122,8 @@ export const AI = () => {
         }
       ];
 
-      // Admins can choose model, regular users get cheapest
-      const modelToUse = isAdmin ? selectedModel.id : DEFAULT_MODEL;
+      // Premium users can choose model, regular users get cheapest
+      const modelToUse = hasPremiumAccess ? selectedModel.id : DEFAULT_MODEL;
 
       // Call the secure edge function
       const { data, error } = await supabase.functions.invoke('ai-chat', {
@@ -156,8 +145,8 @@ export const AI = () => {
 
       setMessages(prev => [...prev, assistantMessage]);
       
-      // Only track usage for non-admins
-      if (!isAdmin) {
+      // Only track usage for non-premium users
+      if (!hasPremiumAccess) {
         const newCount = questionsUsed + 1;
         setQuestionsUsed(newCount);
         saveUsageData(newCount);
@@ -186,12 +175,12 @@ export const AI = () => {
           <h1 className="text-2xl font-bold text-foreground">AI Assistant</h1>
         </div>
         <div className="flex items-center gap-3">
-          {/* Admin model selector */}
-          {isAdmin && (
+          {/* Premium model selector */}
+          {hasPremiumAccess && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" className="gap-2">
-                  <Crown className="h-4 w-4 text-yellow-500" />
+                  <Crown className={cn("h-4 w-4", isOwner ? "text-purple-500" : "text-yellow-500")} />
                   {selectedModel.name}
                   <span className="text-xs text-muted-foreground">({selectedModel.cost})</span>
                   <ChevronDown className="h-3 w-3" />
@@ -218,15 +207,15 @@ export const AI = () => {
           {/* Usage indicator */}
           <div className={cn(
             "flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-mono",
-            isAdmin 
-              ? "bg-yellow-500/10 text-yellow-500"
+            hasPremiumAccess 
+              ? isOwner ? "bg-purple-500/10 text-purple-500" : "bg-yellow-500/10 text-yellow-500"
               : questionsRemaining > 3 
                 ? "bg-primary/10 text-primary" 
                 : questionsRemaining > 0 
                   ? "bg-yellow-500/10 text-yellow-500"
                   : "bg-destructive/10 text-destructive"
           )}>
-            {isAdmin ? (
+            {hasPremiumAccess ? (
               <>
                 <Crown className="h-4 w-4" />
                 Unlimited
@@ -248,8 +237,8 @@ export const AI = () => {
             <div className="text-center text-muted-foreground py-12">
               <Sparkles className="h-12 w-12 mx-auto mb-4 opacity-50" />
               <p>
-                {isAdmin 
-                  ? "Ask me anything! You have unlimited messages as an admin."
+                {hasPremiumAccess 
+                  ? `Ask me anything! You have unlimited messages as ${isOwner ? 'an owner' : 'an admin'}.`
                   : `Ask me anything! You have ${questionsRemaining} questions remaining today.`
                 }
               </p>
@@ -286,13 +275,13 @@ export const AI = () => {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()}
-          placeholder={isAdmin || questionsRemaining > 0 ? "Ask something..." : "Daily limit reached"}
-          disabled={isLoading || (!isAdmin && questionsRemaining <= 0)}
+          placeholder={hasPremiumAccess || questionsRemaining > 0 ? "Ask something..." : "Daily limit reached"}
+          disabled={isLoading || (!hasPremiumAccess && questionsRemaining <= 0)}
           className="flex-1"
         />
         <Button 
           onClick={sendMessage} 
-          disabled={isLoading || !input.trim() || (!isAdmin && questionsRemaining <= 0)}
+          disabled={isLoading || !input.trim() || (!hasPremiumAccess && questionsRemaining <= 0)}
           size="icon"
         >
           <Send className="h-4 w-4" />

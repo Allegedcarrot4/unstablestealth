@@ -63,12 +63,12 @@ serve(async (req) => {
       );
     }
 
-    const isAdmin = session.role === 'admin';
-    const isOwner = message.session_id === session.id;
+    const isAdminOrOwner = session.role === 'admin' || session.role === 'owner';
+    const isMessageOwner = message.session_id === session.id;
 
     if (action === 'undo') {
       // User can undo their own messages (last 3 only)
-      if (!isOwner) {
+      if (!isMessageOwner) {
         return new Response(
           JSON.stringify({ error: 'You can only undo your own messages' }),
           { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -147,10 +147,10 @@ serve(async (req) => {
     }
 
     if (action === 'delete') {
-      // Admin-only: delete for everyone
-      if (!isAdmin) {
+      // Admin/Owner only: delete for everyone
+      if (!isAdminOrOwner) {
         return new Response(
-          JSON.stringify({ error: 'Only admins can delete messages for everyone' }),
+          JSON.stringify({ error: 'Only admins and owners can delete messages for everyone' }),
           { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }

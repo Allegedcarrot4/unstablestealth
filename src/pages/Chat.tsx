@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { MessageCircle, Send, Users, Undo2, Trash2, EyeOff, Shield } from 'lucide-react';
+import { MessageCircle, Send, Users, Undo2, Trash2, EyeOff, Shield, Crown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -24,7 +24,7 @@ interface Profile {
 
 interface SessionRole {
   session_id: string;
-  role: 'user' | 'admin';
+  role: 'user' | 'admin' | 'owner';
 }
 
 const generateColor = (str: string) => {
@@ -39,12 +39,15 @@ const generateColor = (str: string) => {
 export const Chat = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [profiles, setProfiles] = useState<Record<string, string>>({});
-  const [sessionRoles, setSessionRoles] = useState<Record<string, 'user' | 'admin'>>({});
+  const [sessionRoles, setSessionRoles] = useState<Record<string, 'user' | 'admin' | 'owner'>>({});
   const [newMessage, setNewMessage] = useState('');
   const [onlineCount, setOnlineCount] = useState(1);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const { session, isAdmin } = useAuth();
+  const { session, isAdmin, isOwner } = useAuth();
   const { toast } = useToast();
+
+  // Owner or admin can delete messages
+  const canModerate = isAdmin || isOwner;
 
   useEffect(() => {
     fetchMessages();
@@ -128,8 +131,8 @@ export const Chat = () => {
       .select('id, role');
     
     if (data) {
-      const rolesMap: Record<string, 'user' | 'admin'> = {};
-      data.forEach((s: { id: string; role: 'user' | 'admin' }) => {
+      const rolesMap: Record<string, 'user' | 'admin' | 'owner'> = {};
+      data.forEach((s: { id: string; role: 'user' | 'admin' | 'owner' }) => {
         rolesMap[s.id] = s.role;
       });
       setSessionRoles(rolesMap);
@@ -273,8 +276,8 @@ export const Chat = () => {
     return profiles[sessionId] || 'Anonymous';
   };
 
-  const isUserAdmin = (sessionId: string) => {
-    return sessionRoles[sessionId] === 'admin';
+  const getUserRole = (sessionId: string) => {
+    return sessionRoles[sessionId] || 'user';
   };
 
   // Get user's own recent message IDs (last 3)
@@ -295,6 +298,26 @@ export const Chat = () => {
     if (session && msg.hidden_for_session_ids?.includes(session.id)) return false;
     return true;
   });
+
+  const getRoleBadge = (role: 'user' | 'admin' | 'owner') => {
+    if (role === 'owner') {
+      return (
+        <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 border-purple-500 text-purple-500 bg-purple-500/10">
+          <Crown className="h-2.5 w-2.5 mr-0.5" />
+          Owner
+        </Badge>
+      );
+    }
+    if (role === 'admin') {
+      return (
+        <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 border-amber-500 text-amber-500 bg-amber-500/10">
+          <Shield className="h-2.5 w-2.5 mr-0.5" />
+          Admin
+        </Badge>
+      );
+    }
+    return null;
+  };
 
   return (
     <div className="h-screen flex flex-col animate-fade-in">
@@ -330,7 +353,7 @@ export const Chat = () => {
               const isOwn = msg.session_id === session?.id;
               const userName = getUserName(msg.session_id);
               const userColor = generateColor(msg.session_id);
-              const senderIsAdmin = isUserAdmin(msg.session_id);
+              const senderRole = getUserRole(msg.session_id);
               const canUndo = isOwn && ownRecentIds.includes(msg.id);
               
               return (
@@ -351,12 +374,7 @@ export const Chat = () => {
                           <p className="text-xs font-medium" style={{ color: userColor }}>
                             {userName}
                           </p>
-                          {senderIsAdmin && (
-                            <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 border-amber-500 text-amber-500 bg-amber-500/10">
-                              <Shield className="h-2.5 w-2.5 mr-0.5" />
-                              Admin
-                            </Badge>
-                          )}
+                          {getRoleBadge(senderRole)}
                         </div>
                       )}
                       <p className="text-sm break-words">{msg.message}</p>
@@ -389,13 +407,13 @@ export const Chat = () => {
                           <EyeOff className="h-3 w-3" />
                         </Button>
                       )}
-                      {isAdmin && (
+                      {canModerate && (
                         <Button
                           variant="ghost"
                           size="icon"
                           className="h-6 w-6 text-destructive hover:text-destructive"
                           onClick={() => handleAdminDelete(msg.id)}
-                          title="Delete for everyone (Admin)"
+                          title="Delete for everyone"
                         >
                           <Trash2 className="h-3 w-3" />
                         </Button>
