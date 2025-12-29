@@ -6,6 +6,20 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Cheapest model for regular users
+const DEFAULT_MODEL = 'google/gemini-2.5-flash-lite';
+
+// All allowed models (admins can use any)
+const ALLOWED_MODELS = [
+  'google/gemini-2.5-flash-lite',
+  'google/gemini-2.5-flash',
+  'google/gemini-2.5-pro',
+  'google/gemini-3-pro-preview',
+  'openai/gpt-5-nano',
+  'openai/gpt-5-mini',
+  'openai/gpt-5',
+];
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -13,7 +27,7 @@ serve(async (req) => {
   }
 
   try {
-    const { messages, device_id } = await req.json();
+    const { messages, device_id, model } = await req.json();
 
     if (!messages || !device_id) {
       console.error('Missing required fields: messages or device_id');
@@ -31,7 +45,7 @@ serve(async (req) => {
     // Verify session exists and is not banned
     const { data: session, error: sessionError } = await supabase
       .from('sessions')
-      .select('id, is_banned')
+      .select('id, is_banned, role')
       .eq('device_id', device_id)
       .single();
 
@@ -50,6 +64,23 @@ serve(async (req) => {
         { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+
+    const isAdmin = session.role === 'admin';
+    
+    // Determine which model to use
+    let modelToUse = DEFAULT_MODEL;
+    
+    if (model && ALLOWED_MODELS.includes(model)) {
+      // Only admins can use non-default models
+      if (model !== DEFAULT_MODEL && !isAdmin) {
+        console.log('Non-admin attempted to use premium model');
+        modelToUse = DEFAULT_MODEL;
+      } else {
+        modelToUse = model;
+      }
+    }
+
+    console.log(`Using model: ${modelToUse} for ${isAdmin ? 'admin' : 'user'}`);
 
     // Get Lovable API key from environment (auto-provisioned)
     const apiKey = Deno.env.get('LOVABLE_API_KEY');
@@ -77,7 +108,7 @@ serve(async (req) => {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          model: 'google/gemini-2.5-flash',
+          model: modelToUse,
           messages: [
             { role: 'system', content: 'You are a helpful AI assistant. Keep answers clear and concise.' },
             ...formattedMessages
