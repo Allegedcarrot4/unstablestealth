@@ -77,6 +77,32 @@ serve(async (req) => {
           );
         }
 
+        // Get target's role to check ban permissions
+        const { data: targetSession } = await supabase
+          .from('sessions')
+          .select('role')
+          .eq('device_id', target_device_id)
+          .single();
+
+        const targetRole = targetSession?.role || 'user';
+        const callerRole = callerSession.role;
+
+        // Admins can only ban users, not other admins or owners
+        if (callerRole === 'admin' && (targetRole === 'admin' || targetRole === 'owner')) {
+          return new Response(
+            JSON.stringify({ error: 'Admins can only ban users' }),
+            { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        // No one can ban owners except owners themselves (already prevented by self-ban check)
+        if (targetRole === 'owner' && callerRole !== 'owner') {
+          return new Response(
+            JSON.stringify({ error: 'Only owners can ban other owners' }),
+            { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
         // Insert into banned_devices
         const { error: banError } = await supabase
           .from('banned_devices')
