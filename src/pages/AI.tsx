@@ -25,8 +25,10 @@ interface AIModel {
   cost: string;
 }
 
-const DAILY_LIMIT = 10;
-const STORAGE_KEY = 'ai_daily_usage';
+// Weekly limits by role
+const USER_WEEKLY_LIMIT = 5;
+const ADMIN_WEEKLY_LIMIT = 10;
+const STORAGE_KEY = 'ai_weekly_usage';
 
 // Cheapest model for regular users
 const DEFAULT_MODEL = 'google/gemini-2.5-flash-lite';
@@ -51,21 +53,33 @@ const getDeviceId = (): string => {
   return deviceId;
 };
 
+// Get the start of the current week (Sunday)
+const getWeekStart = (): string => {
+  const now = new Date();
+  const dayOfWeek = now.getDay();
+  const diff = now.getDate() - dayOfWeek;
+  const weekStart = new Date(now.setDate(diff));
+  weekStart.setHours(0, 0, 0, 0);
+  return weekStart.toISOString().split('T')[0];
+};
+
 const getUsageData = () => {
   const stored = localStorage.getItem(STORAGE_KEY);
-  if (!stored) return { date: new Date().toDateString(), count: 0 };
+  const currentWeek = getWeekStart();
+  
+  if (!stored) return { weekStart: currentWeek, count: 0 };
   
   const data = JSON.parse(stored);
-  // Reset if it's a new day
-  if (data.date !== new Date().toDateString()) {
-    return { date: new Date().toDateString(), count: 0 };
+  // Reset if it's a new week
+  if (data.weekStart !== currentWeek) {
+    return { weekStart: currentWeek, count: 0 };
   }
   return data;
 };
 
 const saveUsageData = (count: number) => {
   localStorage.setItem(STORAGE_KEY, JSON.stringify({
-    date: new Date().toDateString(),
+    weekStart: getWeekStart(),
     count
   }));
 };
@@ -79,24 +93,25 @@ export const AI = () => {
   const { toast } = useToast();
   const { isAdmin, isOwner } = useAuth();
 
-  // Owners and admins have premium access (model selection + unlimited)
-  const hasPremiumAccess = isAdmin || isOwner;
+  // Owners have unlimited, admins get 10/week, users get 5/week
+  const hasUnlimitedAccess = isOwner;
+  const weeklyLimit = isOwner ? Infinity : isAdmin ? ADMIN_WEEKLY_LIMIT : USER_WEEKLY_LIMIT;
 
   useEffect(() => {
     const usage = getUsageData();
     setQuestionsUsed(usage.count);
   }, []);
 
-  // Premium users have unlimited, regular users have daily limit
-  const questionsRemaining = hasPremiumAccess ? Infinity : DAILY_LIMIT - questionsUsed;
+  // Calculate remaining questions
+  const questionsRemaining = hasUnlimitedAccess ? Infinity : weeklyLimit - questionsUsed;
 
   const sendMessage = async () => {
     if (!input.trim() || isLoading) return;
 
-    if (!hasPremiumAccess && questionsRemaining <= 0) {
+    if (!hasUnlimitedAccess && questionsRemaining <= 0) {
       toast({
-        title: "Daily limit reached",
-        description: "You've used all 10 questions for today. Come back tomorrow!",
+        title: "Weekly limit reached",
+        description: `You've used all ${weeklyLimit} questions for this week. Come back next week!`,
         variant: "destructive"
       });
       return;
@@ -122,7 +137,8 @@ export const AI = () => {
         }
       ];
 
-      // Premium users can choose model, regular users get cheapest
+      // Premium users (admin/owner) can choose model, regular users get cheapest
+      const hasPremiumAccess = isAdmin || isOwner;
       const modelToUse = hasPremiumAccess ? selectedModel.id : DEFAULT_MODEL;
 
       // Call the secure edge function
@@ -145,8 +161,8 @@ export const AI = () => {
 
       setMessages(prev => [...prev, assistantMessage]);
       
-      // Only track usage for non-premium users
-      if (!hasPremiumAccess) {
+      // Only track usage for users with limits (not owners)
+      if (!hasUnlimitedAccess) {
         const newCount = questionsUsed + 1;
         setQuestionsUsed(newCount);
         saveUsageData(newCount);
@@ -175,8 +191,8 @@ export const AI = () => {
           <h1 className="text-2xl font-bold text-foreground">AI Assistant</h1>
         </div>
         <div className="flex items-center gap-3">
-          {/* Premium model selector */}
-          {hasPremiumAccess && (
+          {/* Premium model selector for admins and owners */}
+          {(isAdmin || isOwner) && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" className="gap-2">
@@ -207,15 +223,17 @@ export const AI = () => {
           {/* Usage indicator */}
           <div className={cn(
             "flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-mono",
-            hasPremiumAccess 
-              ? isOwner ? "bg-purple-500/10 text-purple-500" : "bg-yellow-500/10 text-yellow-500"
-              : questionsRemaining > 3 
-                ? "bg-primary/10 text-primary" 
-                : questionsRemaining > 0 
-                  ? "bg-yellow-500/10 text-yellow-500"
-                  : "bg-destructive/10 text-destructive"
+            hasUnlimitedAccess 
+              ? "bg-purple-500/10 text-purple-500"
+              : isAdmin
+                ? "bg-yellow-500/10 text-yellow-500"
+                : questionsRemaining > 2 
+                  ? "bg-primary/10 text-primary" 
+                  : questionsRemaining > 0 
+                    ? "bg-yellow-500/10 text-yellow-500"
+                    : "bg-destructive/10 text-destructive"
           )}>
-            {hasPremiumAccess ? (
+            {hasUnlimitedAccess ? (
               <>
                 <Crown className="h-4 w-4" />
                 Unlimited
@@ -223,7 +241,7 @@ export const AI = () => {
             ) : (
               <>
                 <AlertCircle className="h-4 w-4" />
-                {questionsRemaining}/{DAILY_LIMIT} left
+                {questionsRemaining}/{weeklyLimit} this week
               </>
             )}
           </div>
@@ -237,9 +255,11 @@ export const AI = () => {
             <div className="text-center text-muted-foreground py-12">
               <Sparkles className="h-12 w-12 mx-auto mb-4 opacity-50" />
               <p>
-                {hasPremiumAccess 
-                  ? `Ask me anything! You have unlimited messages as ${isOwner ? 'an owner' : 'an admin'}.`
-                  : `Ask me anything! You have ${questionsRemaining} questions remaining today.`
+                {hasUnlimitedAccess 
+                  ? "Ask me anything! You have unlimited messages as an owner."
+                  : isAdmin
+                    ? `Ask me anything! You have ${questionsRemaining} questions remaining this week.`
+                    : `Ask me anything! You have ${questionsRemaining} questions remaining this week.`
                 }
               </p>
             </div>
@@ -275,13 +295,13 @@ export const AI = () => {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()}
-          placeholder={hasPremiumAccess || questionsRemaining > 0 ? "Ask something..." : "Daily limit reached"}
-          disabled={isLoading || (!hasPremiumAccess && questionsRemaining <= 0)}
+          placeholder={hasUnlimitedAccess || questionsRemaining > 0 ? "Ask something..." : "Weekly limit reached"}
+          disabled={isLoading || (!hasUnlimitedAccess && questionsRemaining <= 0)}
           className="flex-1"
         />
         <Button 
           onClick={sendMessage} 
-          disabled={isLoading || !input.trim() || (!hasPremiumAccess && questionsRemaining <= 0)}
+          disabled={isLoading || !input.trim() || (!hasUnlimitedAccess && questionsRemaining <= 0)}
           size="icon"
         >
           <Send className="h-4 w-4" />
