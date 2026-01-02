@@ -1,12 +1,29 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+const allowedOrigins = [
+  'https://egjyojbtzxurjpptgruu.supabase.co',
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'https://lovable.dev',
+  'https://gptengineer.app'
+];
+
+const getCorsHeaders = (origin: string | null) => {
+  const allowedOrigin = origin && allowedOrigins.some(allowed => 
+    origin === allowed || origin.endsWith('.lovable.dev') || origin.endsWith('.gptengineer.app')
+  ) ? origin : allowedOrigins[0];
+  
+  return {
+    'Access-Control-Allow-Origin': allowedOrigin,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  };
 };
 
 serve(async (req) => {
+  const origin = req.headers.get('origin');
+  const corsHeaders = getCorsHeaders(origin);
+
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -16,14 +33,13 @@ serve(async (req) => {
     const { password, device_id } = await req.json();
 
     if (!password || !device_id) {
-      console.error('Missing required fields: password or device_id');
       return new Response(
-        JSON.stringify({ error: 'Password and device_id are required' }),
+        JSON.stringify({ error: 'Missing required fields' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Get passwords from environment variables (server-side only)
+    // Validate password against environment variables
     const ownerPassword = Deno.env.get('OWNER_PASSWORD');
     const adminPassword = Deno.env.get('ADMIN_PASSWORD');
     const userPassword = Deno.env.get('USER_PASSWORD');
@@ -42,7 +58,7 @@ serve(async (req) => {
     const isUser = password === userPassword;
 
     if (!isOwner && !isAdmin && !isUser) {
-      console.log('Invalid password attempt for device:', device_id);
+      console.log('Auth: invalid password attempt');
       return new Response(
         JSON.stringify({ error: 'Invalid password' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -64,7 +80,7 @@ serve(async (req) => {
       .maybeSingle();
 
     if (banData) {
-      console.log('Banned device attempted login:', device_id);
+      console.log('Auth: banned device attempt');
       return new Response(
         JSON.stringify({ error: 'Your device has been banned' }),
         { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -90,7 +106,7 @@ serve(async (req) => {
         .single();
 
       if (error) {
-        console.error('Failed to update session:', error);
+        console.error('Session update failed');
         return new Response(
           JSON.stringify({ error: 'Failed to update session' }),
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -106,7 +122,7 @@ serve(async (req) => {
         .single();
 
       if (error) {
-        console.error('Failed to create session:', error);
+        console.error('Session creation failed');
         return new Response(
           JSON.stringify({ error: 'Failed to create session' }),
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -122,7 +138,7 @@ serve(async (req) => {
       .eq('session_id', sessionData.id)
       .maybeSingle();
 
-    console.log('Successful login for device:', device_id, 'role:', role);
+    console.log('Auth: successful login', { role });
 
     return new Response(
       JSON.stringify({
@@ -138,7 +154,7 @@ serve(async (req) => {
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
-    console.error('Error in authenticate function:', error);
+    console.error('Auth function error');
     return new Response(
       JSON.stringify({ error: 'Internal server error' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

@@ -1,9 +1,23 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+const allowedOrigins = [
+  'https://egjyojbtzxurjpptgruu.supabase.co',
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'https://lovable.dev',
+  'https://gptengineer.app'
+];
+
+const getCorsHeaders = (origin: string | null) => {
+  const allowedOrigin = origin && allowedOrigins.some(allowed => 
+    origin === allowed || origin.endsWith('.lovable.dev') || origin.endsWith('.gptengineer.app')
+  ) ? origin : allowedOrigins[0];
+  
+  return {
+    'Access-Control-Allow-Origin': allowedOrigin,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  };
 };
 
 // Cheapest model for regular users
@@ -21,6 +35,9 @@ const ALLOWED_MODELS = [
 ];
 
 serve(async (req) => {
+  const origin = req.headers.get('origin');
+  const corsHeaders = getCorsHeaders(origin);
+
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -30,7 +47,6 @@ serve(async (req) => {
     const { messages, device_id, model } = await req.json();
 
     if (!messages || !device_id) {
-      console.error('Missing required fields: messages or device_id');
       return new Response(
         JSON.stringify({ error: 'Missing required fields' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -50,7 +66,6 @@ serve(async (req) => {
       .single();
 
     if (sessionError || !session) {
-      console.error('Session not found for device');
       return new Response(
         JSON.stringify({ error: 'Unauthorized - session not found' }),
         { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -58,7 +73,7 @@ serve(async (req) => {
     }
 
     if (session.is_banned) {
-      console.log('Banned user attempted AI request');
+      console.log('AI-chat: banned user attempt');
       return new Response(
         JSON.stringify({ error: 'Your account has been banned' }),
         { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -73,19 +88,18 @@ serve(async (req) => {
     if (model && ALLOWED_MODELS.includes(model)) {
       // Only admins can use non-default models
       if (model !== DEFAULT_MODEL && !isAdminOrOwner) {
-        console.log('Non-admin attempted to use premium model');
         modelToUse = DEFAULT_MODEL;
       } else {
         modelToUse = model;
       }
     }
 
-    console.log(`Using model: ${modelToUse} for ${isAdminOrOwner ? 'premium user' : 'user'}`);
+    console.log('AI-chat: processing request', { role: session.role, model: modelToUse });
 
     // Get Lovable API key from environment (auto-provisioned)
     const apiKey = Deno.env.get('LOVABLE_API_KEY');
     if (!apiKey) {
-      console.error('LOVABLE_API_KEY not configured');
+      console.error('AI-chat: API key not configured');
       return new Response(
         JSON.stringify({ error: 'AI service not configured' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -119,7 +133,7 @@ serve(async (req) => {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Lovable AI Gateway error:', response.status, errorText);
+      console.error('AI-chat: gateway error', { status: response.status });
       
       if (response.status === 429) {
         return new Response(
@@ -141,7 +155,7 @@ serve(async (req) => {
     }
 
     const data = await response.json();
-    console.log('AI request successful');
+    console.log('AI-chat: request successful');
 
     // Convert response back to Gemini format for frontend compatibility
     const geminiResponse = {
@@ -159,7 +173,7 @@ serve(async (req) => {
     );
 
   } catch (error) {
-    console.error('AI chat error:', error);
+    console.error('AI-chat function error');
     return new Response(
       JSON.stringify({ error: 'Internal server error' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

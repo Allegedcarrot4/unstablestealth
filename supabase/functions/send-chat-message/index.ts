@@ -1,12 +1,29 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+const allowedOrigins = [
+  'https://egjyojbtzxurjpptgruu.supabase.co',
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'https://lovable.dev',
+  'https://gptengineer.app'
+];
+
+const getCorsHeaders = (origin: string | null) => {
+  const allowedOrigin = origin && allowedOrigins.some(allowed => 
+    origin === allowed || origin.endsWith('.lovable.dev') || origin.endsWith('.gptengineer.app')
+  ) ? origin : allowedOrigins[0];
+  
+  return {
+    'Access-Control-Allow-Origin': allowedOrigin,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  };
 };
 
 serve(async (req) => {
+  const origin = req.headers.get('origin');
+  const corsHeaders = getCorsHeaders(origin);
+
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -16,7 +33,6 @@ serve(async (req) => {
     const { message, device_id } = await req.json();
 
     if (!message || !device_id) {
-      console.error('Missing required fields: message or device_id');
       return new Response(
         JSON.stringify({ error: 'Message and device_id are required' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -45,7 +61,6 @@ serve(async (req) => {
       .maybeSingle();
 
     if (sessionError || !session) {
-      console.error('Session not found for device:', device_id);
       return new Response(
         JSON.stringify({ error: 'Session not found. Please log in again.' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -53,7 +68,7 @@ serve(async (req) => {
     }
 
     if (session.is_banned) {
-      console.log('Banned user attempted to send message:', device_id);
+      console.log('Chat: banned user attempt');
       return new Response(
         JSON.stringify({ error: 'You are banned from sending messages' }),
         { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -71,21 +86,21 @@ serve(async (req) => {
       .single();
 
     if (insertError) {
-      console.error('Failed to insert message:', insertError);
+      console.error('Message insert failed');
       return new Response(
         JSON.stringify({ error: 'Failed to send message' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    console.log('Message sent successfully by session:', session.id);
+    console.log('Chat: message sent successfully');
 
     return new Response(
       JSON.stringify({ success: true, message: chatMessage }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
-    console.error('Error in send-chat-message function:', error);
+    console.error('Chat function error');
     return new Response(
       JSON.stringify({ error: 'Internal server error' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

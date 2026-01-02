@@ -150,43 +150,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: false, error: 'No active session' };
     }
     
-    const trimmedUsername = username.trim();
-    if (trimmedUsername.length < 2 || trimmedUsername.length > 20) {
-      return { success: false, error: 'Username must be 2-20 characters' };
-    }
+    const deviceId = getDeviceId();
     
-    // Check if profile exists
-    const { data: existingProfile } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('session_id', session.id)
-      .maybeSingle();
-    
-    if (existingProfile) {
-      // Update username
-      const { error } = await supabase
-        .from('profiles')
-        .update({ username: trimmedUsername })
-        .eq('session_id', session.id);
-      
-      if (error) {
-        return { success: false, error: 'Failed to update username' };
+    try {
+      // Use edge function for server-side validation and ownership check
+      const response = await supabase.functions.invoke('update-profile', {
+        body: { username, device_id: deviceId }
+      });
+
+      if (response.error) {
+        return { success: false, error: 'Failed to update username. Please try again.' };
       }
-    } else {
-      // Create profile
-      const { error } = await supabase
-        .from('profiles')
-        .insert({ session_id: session.id, username: trimmedUsername });
-      
-      if (error) {
-        return { success: false, error: 'Failed to save username' };
+
+      const data = response.data;
+
+      if (data.error) {
+        return { success: false, error: data.error };
       }
+
+      setSession(prev => prev ? { ...prev, username: data.username } : null);
+      setNeedsUsername(false);
+      
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: 'Failed to update username. Please try again.' };
     }
-    
-    setSession(prev => prev ? { ...prev, username: trimmedUsername } : null);
-    setNeedsUsername(false);
-    
-    return { success: true };
   };
 
   const logout = async () => {
