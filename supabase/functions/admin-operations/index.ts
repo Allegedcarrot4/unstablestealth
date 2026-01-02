@@ -1,12 +1,29 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+const allowedOrigins = [
+  'https://egjyojbtzxurjpptgruu.supabase.co',
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'https://lovable.dev',
+  'https://gptengineer.app'
+];
+
+const getCorsHeaders = (origin: string | null) => {
+  const allowedOrigin = origin && allowedOrigins.some(allowed => 
+    origin === allowed || origin.endsWith('.lovable.dev') || origin.endsWith('.gptengineer.app')
+  ) ? origin : allowedOrigins[0];
+  
+  return {
+    'Access-Control-Allow-Origin': allowedOrigin,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  };
 };
 
 serve(async (req) => {
+  const origin = req.headers.get('origin');
+  const corsHeaders = getCorsHeaders(origin);
+
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -16,7 +33,6 @@ serve(async (req) => {
     const { action, device_id, target_device_id, target_session_id } = await req.json();
 
     if (!action || !device_id) {
-      console.error('Missing required fields: action or device_id');
       return new Response(
         JSON.stringify({ error: 'Missing required fields' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -28,7 +44,7 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Verify the caller is an admin
+    // Verify the caller is an admin or owner
     const { data: callerSession, error: callerError } = await supabase
       .from('sessions')
       .select('id, role, is_banned')
@@ -36,7 +52,6 @@ serve(async (req) => {
       .single();
 
     if (callerError || !callerSession) {
-      console.error('Caller session not found');
       return new Response(
         JSON.stringify({ error: 'Unauthorized - session not found' }),
         { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -44,15 +59,19 @@ serve(async (req) => {
     }
 
     if (callerSession.is_banned) {
-      console.log('Banned user attempted admin operation');
+      console.log('Admin-ops: banned user attempt');
       return new Response(
         JSON.stringify({ error: 'Your account has been banned' }),
         { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    if (callerSession.role !== 'admin') {
-      console.log('Non-admin attempted admin operation');
+    const callerRole = callerSession.role;
+    const isOwner = callerRole === 'owner';
+    const isAdmin = callerRole === 'admin' || isOwner;
+
+    if (!isAdmin) {
+      console.log('Admin-ops: non-admin attempt');
       return new Response(
         JSON.stringify({ error: 'Unauthorized - admin access required' }),
         { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -85,20 +104,20 @@ serve(async (req) => {
           .single();
 
         const targetRole = targetSession?.role || 'user';
-        const callerRole = callerSession.role;
 
-        // Admins can only ban users, not other admins or owners
-        if (callerRole === 'admin' && (targetRole === 'admin' || targetRole === 'owner')) {
+        // Role hierarchy: owner > admin > user
+        // Owners can ban anyone (admins and users)
+        // Admins can only ban users (not other admins or owners)
+        if (targetRole === 'owner') {
           return new Response(
-            JSON.stringify({ error: 'Admins can only ban users' }),
+            JSON.stringify({ error: 'Cannot ban an owner' }),
             { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
         }
 
-        // No one can ban owners except owners themselves (already prevented by self-ban check)
-        if (targetRole === 'owner' && callerRole !== 'owner') {
+        if (targetRole === 'admin' && !isOwner) {
           return new Response(
-            JSON.stringify({ error: 'Only owners can ban other owners' }),
+            JSON.stringify({ error: 'Only owners can ban admins' }),
             { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
         }
@@ -112,7 +131,7 @@ serve(async (req) => {
           });
 
         if (banError) {
-          console.error('Ban insert error:', banError);
+          console.error('Admin-ops: ban operation failed');
           return new Response(
             JSON.stringify({ error: 'Failed to ban device' }),
             { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -125,7 +144,7 @@ serve(async (req) => {
           .update({ is_banned: true })
           .eq('device_id', target_device_id);
 
-        console.log('Device banned successfully');
+        console.log('Admin-ops: device banned successfully');
         return new Response(
           JSON.stringify({ success: true, message: 'Device banned' }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -152,7 +171,7 @@ serve(async (req) => {
           .update({ is_banned: false })
           .eq('device_id', target_device_id);
 
-        console.log('Device unbanned successfully');
+        console.log('Admin-ops: device unbanned successfully');
         return new Response(
           JSON.stringify({ success: true, message: 'Device unbanned' }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -180,7 +199,7 @@ serve(async (req) => {
           .delete()
           .eq('id', target_session_id);
 
-        console.log('Session deleted successfully');
+        console.log('Admin-ops: session deleted successfully');
         return new Response(
           JSON.stringify({ success: true, message: 'Session deleted' }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -195,7 +214,7 @@ serve(async (req) => {
     }
 
   } catch (error) {
-    console.error('Admin operations error:', error);
+    console.error('Admin-ops function error');
     return new Response(
       JSON.stringify({ error: 'Internal server error' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

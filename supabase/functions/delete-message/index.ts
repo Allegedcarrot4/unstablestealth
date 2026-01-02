@@ -1,12 +1,29 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+const allowedOrigins = [
+  'https://egjyojbtzxurjpptgruu.supabase.co',
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'https://lovable.dev',
+  'https://gptengineer.app'
+];
+
+const getCorsHeaders = (origin: string | null) => {
+  const allowedOrigin = origin && allowedOrigins.some(allowed => 
+    origin === allowed || origin.endsWith('.lovable.dev') || origin.endsWith('.gptengineer.app')
+  ) ? origin : allowedOrigins[0];
+  
+  return {
+    'Access-Control-Allow-Origin': allowedOrigin,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  };
 };
 
 serve(async (req) => {
+  const origin = req.headers.get('origin');
+  const corsHeaders = getCorsHeaders(origin);
+
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -43,6 +60,7 @@ serve(async (req) => {
     }
 
     if (session.is_banned) {
+      console.log('Delete-msg: banned user attempt');
       return new Response(
         JSON.stringify({ error: 'You are banned' }),
         { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -102,13 +120,14 @@ serve(async (req) => {
         .eq('id', message_id);
 
       if (updateError) {
-        console.error('Failed to undo message:', updateError);
+        console.error('Delete-msg: undo operation failed');
         return new Response(
           JSON.stringify({ error: 'Failed to undo message' }),
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
+      console.log('Delete-msg: message undone');
       return new Response(
         JSON.stringify({ success: true, action: 'undo' }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -133,13 +152,14 @@ serve(async (req) => {
         .eq('id', message_id);
 
       if (updateError) {
-        console.error('Failed to hide message:', updateError);
+        console.error('Delete-msg: hide operation failed');
         return new Response(
           JSON.stringify({ error: 'Failed to hide message' }),
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
+      console.log('Delete-msg: message hidden');
       return new Response(
         JSON.stringify({ success: true, action: 'hide' }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -164,13 +184,14 @@ serve(async (req) => {
         .eq('id', message_id);
 
       if (updateError) {
-        console.error('Failed to delete message:', updateError);
+        console.error('Delete-msg: delete operation failed');
         return new Response(
           JSON.stringify({ error: 'Failed to delete message' }),
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
+      console.log('Delete-msg: message deleted');
       return new Response(
         JSON.stringify({ success: true, action: 'delete' }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -183,7 +204,7 @@ serve(async (req) => {
     );
 
   } catch (error) {
-    console.error('Error in delete-message function:', error);
+    console.error('Delete-msg function error');
     return new Response(
       JSON.stringify({ error: 'Internal server error' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

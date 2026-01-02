@@ -1,12 +1,29 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+const allowedOrigins = [
+  'https://egjyojbtzxurjpptgruu.supabase.co',
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'https://lovable.dev',
+  'https://gptengineer.app'
+];
+
+const getCorsHeaders = (origin: string | null) => {
+  const allowedOrigin = origin && allowedOrigins.some(allowed => 
+    origin === allowed || origin.endsWith('.lovable.dev') || origin.endsWith('.gptengineer.app')
+  ) ? origin : allowedOrigins[0];
+  
+  return {
+    'Access-Control-Allow-Origin': allowedOrigin,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  };
 };
 
 serve(async (req) => {
+  const origin = req.headers.get('origin');
+  const corsHeaders = getCorsHeaders(origin);
+
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -16,7 +33,6 @@ serve(async (req) => {
     const { device_id } = await req.json();
 
     if (!device_id) {
-      console.error('Missing required field: device_id');
       return new Response(
         JSON.stringify({ error: 'Missing required field: device_id' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -36,7 +52,6 @@ serve(async (req) => {
       .single();
 
     if (callerError || !callerSession) {
-      console.error('Caller session not found');
       return new Response(
         JSON.stringify({ error: 'Unauthorized - session not found' }),
         { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -44,15 +59,15 @@ serve(async (req) => {
     }
 
     if (callerSession.is_banned) {
-      console.log('Banned user attempted admin data access');
+      console.log('Admin-data: banned user attempt');
       return new Response(
         JSON.stringify({ error: 'Your account has been banned' }),
         { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    if (callerSession.role !== 'admin') {
-      console.log('Non-admin attempted admin data access');
+    if (callerSession.role !== 'admin' && callerSession.role !== 'owner') {
+      console.log('Admin-data: non-admin attempt');
       return new Response(
         JSON.stringify({ error: 'Unauthorized - admin access required' }),
         { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -67,7 +82,7 @@ serve(async (req) => {
       supabase.from('profiles').select('session_id, username')
     ]);
 
-    console.log('Admin data fetched successfully');
+    console.log('Admin-data: fetched successfully');
 
     return new Response(
       JSON.stringify({
@@ -80,7 +95,7 @@ serve(async (req) => {
     );
 
   } catch (error) {
-    console.error('Admin data error:', error);
+    console.error('Admin-data function error');
     return new Response(
       JSON.stringify({ error: 'Internal server error' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
