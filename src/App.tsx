@@ -12,12 +12,13 @@ import { AI } from "./pages/AI";
 import { Settings } from "./pages/Settings";
 import { Login } from "./pages/Login";
 import { Admin } from "./pages/Admin";
+import { Agent } from "./pages/Agent";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
-  const { isLoggedIn, isLoading, isBanned } = useAuth();
+  const { isLoggedIn, isLoading, isBanned, siteDisabled, isOwner } = useAuth();
   
   if (isLoading) {
     return (
@@ -29,6 +30,18 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   
   if (!isLoggedIn || isBanned) {
     return <Navigate to="/login" replace />;
+  }
+
+  // Site is disabled and user is not an owner
+  if (siteDisabled && !isOwner) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4">
+        <div className="text-destructive text-6xl">⚠</div>
+        <h1 className="text-2xl font-bold font-mono text-foreground">Site Disabled</h1>
+        <p className="text-muted-foreground">The site has been temporarily disabled by the owner.</p>
+        <p className="text-muted-foreground text-sm">Please check back later.</p>
+      </div>
+    );
   }
   
   return <>{children}</>;
@@ -46,6 +59,24 @@ const AdminRoute = ({ children }: { children: React.ReactNode }) => {
   }
   
   if (!isAdmin) {
+    return <Navigate to="/" replace />;
+  }
+  
+  return <>{children}</>;
+};
+
+const OwnerRoute = ({ children }: { children: React.ReactNode }) => {
+  const { isOwner, isLoading } = useAuth();
+  
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="animate-pulse text-primary font-mono">Loading...</div>
+      </div>
+    );
+  }
+  
+  if (!isOwner) {
     return <Navigate to="/" replace />;
   }
   
@@ -94,6 +125,11 @@ const App = () => (
                   <AdminRoute>
                     <Admin />
                   </AdminRoute>
+                } />
+                <Route path="/agent" element={
+                  <OwnerRoute>
+                    <Agent />
+                  </OwnerRoute>
                 } />
               </Route>
               <Route path="*" element={<NotFound />} />

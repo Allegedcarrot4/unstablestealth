@@ -17,10 +17,12 @@ interface AuthContextType {
   isOwner: boolean;
   isBanned: boolean;
   needsUsername: boolean;
+  siteDisabled: boolean;
   login: (password: string) => Promise<{ success: boolean; error?: string; needsUsername?: boolean }>;
   setUsername: (username: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
   checkBanStatus: () => Promise<boolean>;
+  checkSiteStatus: () => Promise<boolean>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -39,6 +41,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [needsUsername, setNeedsUsername] = useState(false);
+  const [siteDisabled, setSiteDisabled] = useState(false);
 
   const checkBanStatus = useCallback(async (): Promise<boolean> => {
     const deviceId = getDeviceId();
@@ -50,6 +53,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       .maybeSingle();
     
     return !!banData;
+  }, []);
+
+  const checkSiteStatus = useCallback(async (): Promise<boolean> => {
+    const { data: siteData } = await supabase
+      .from('site_settings')
+      .select('value')
+      .eq('key', 'site_enabled')
+      .single();
+    
+    if (siteData?.value && typeof siteData.value === 'object' && !Array.isArray(siteData.value)) {
+      const value = siteData.value as { enabled?: boolean };
+      return !(value.enabled ?? true);
+    }
+    return false;
   }, []);
 
   // Check for existing session on mount
@@ -97,13 +114,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           .from('sessions')
           .update({ last_active_at: new Date().toISOString() })
           .eq('id', existingSession.id);
+        
+        // Check site status for non-owners
+        if (existingSession.role !== 'owner') {
+          const isDisabled = await checkSiteStatus();
+          setSiteDisabled(isDisabled);
+        }
       }
       
       setIsLoading(false);
     };
     
     checkSession();
-  }, [checkBanStatus]);
+  }, [checkBanStatus, checkSiteStatus]);
 
   const login = async (password: string): Promise<{ success: boolean; error?: string; needsUsername?: boolean }> => {
     const deviceId = getDeviceId();
@@ -199,10 +222,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isOwner: session?.role === 'owner',
         isBanned: session?.is_banned ?? false,
         needsUsername,
+        siteDisabled,
         login,
         setUsername,
         logout,
-        checkBanStatus
+        checkBanStatus,
+        checkSiteStatus
       }}
     >
       {children}

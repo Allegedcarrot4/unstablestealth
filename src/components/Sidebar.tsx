@@ -7,7 +7,8 @@ import {
   Zap,
   Crown,
   MessageCircle,
-  Sparkles
+  Sparkles,
+  Bot
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSettings } from '@/contexts/SettingsContext';
@@ -26,11 +27,13 @@ const navItems = [
 export const Sidebar = () => {
   const location = useLocation();
   const { settings, triggerPanic } = useSettings();
-  const { isAdmin } = useAuth();
+  const { isAdmin, isOwner } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
 
   const allNavItems = isAdmin 
-    ? [...navItems.slice(0, 2), { path: '/admin', icon: Crown, label: 'Admin' }, ...navItems.slice(2)]
+    ? isOwner
+      ? [...navItems.slice(0, 2), { path: '/admin', icon: Crown, label: 'Admin' }, { path: '/agent', icon: Bot, label: 'Agent' }, ...navItems.slice(2)]
+      : [...navItems.slice(0, 2), { path: '/admin', icon: Crown, label: 'Admin' }, ...navItems.slice(2)]
     : navItems;
 
   return (
