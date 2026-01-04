@@ -30,7 +30,7 @@ serve(async (req) => {
   }
 
   try {
-    const { action, device_id, target_device_id, target_session_id } = await req.json();
+    const { action, device_id, target_device_id, target_session_id, new_role, enabled } = await req.json();
 
     if (!action || !device_id) {
       return new Response(
@@ -202,6 +202,121 @@ serve(async (req) => {
         console.log('Admin-ops: session deleted successfully');
         return new Response(
           JSON.stringify({ success: true, message: 'Session deleted' }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      case 'toggle_site': {
+        // Only owners can toggle site
+        if (!isOwner) {
+          return new Response(
+            JSON.stringify({ error: 'Only owners can toggle site status' }),
+            { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        if (typeof enabled !== 'boolean') {
+          return new Response(
+            JSON.stringify({ error: 'enabled (boolean) required' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const { error: updateError } = await supabase
+          .from('site_settings')
+          .update({ 
+            value: { enabled },
+            updated_at: new Date().toISOString(),
+            updated_by: callerSession.id
+          })
+          .eq('key', 'site_enabled');
+
+        if (updateError) {
+          console.error('Admin-ops: toggle site failed');
+          return new Response(
+            JSON.stringify({ error: 'Failed to toggle site status' }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        console.log(`Admin-ops: site ${enabled ? 'enabled' : 'disabled'} successfully`);
+        return new Response(
+          JSON.stringify({ success: true, message: `Site ${enabled ? 'enabled' : 'disabled'}`, enabled }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      case 'change_role': {
+        // Only owners can change roles
+        if (!isOwner) {
+          return new Response(
+            JSON.stringify({ error: 'Only owners can change user roles' }),
+            { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        if (!target_device_id || !new_role) {
+          return new Response(
+            JSON.stringify({ error: 'target_device_id and new_role required' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        // Cannot change own role
+        if (target_device_id === device_id) {
+          return new Response(
+            JSON.stringify({ error: 'Cannot change your own role' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        // Validate role value
+        const validRoles = ['user', 'admin'];
+        if (!validRoles.includes(new_role)) {
+          return new Response(
+            JSON.stringify({ error: 'Invalid role. Must be "user" or "admin"' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        // Get target session to ensure they exist and aren't an owner
+        const { data: targetSessionData } = await supabase
+          .from('sessions')
+          .select('role')
+          .eq('device_id', target_device_id)
+          .single();
+
+        if (!targetSessionData) {
+          return new Response(
+            JSON.stringify({ error: 'Target session not found' }),
+            { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        // Cannot change owner roles
+        if (targetSessionData.role === 'owner') {
+          return new Response(
+            JSON.stringify({ error: 'Cannot change owner role' }),
+            { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const { error: roleError } = await supabase
+          .from('sessions')
+          .update({ role: new_role })
+          .eq('device_id', target_device_id);
+
+        if (roleError) {
+          console.error('Admin-ops: change role failed');
+          return new Response(
+            JSON.stringify({ error: 'Failed to change role' }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        console.log(`Admin-ops: role changed to ${new_role} successfully`);
+        return new Response(
+          JSON.stringify({ success: true, message: `Role changed to ${new_role}` }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }

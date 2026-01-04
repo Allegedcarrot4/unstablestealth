@@ -1,11 +1,18 @@
 import { useState, useEffect } from 'react';
-import { Shield, Ban, Trash2, RefreshCw, Users, MessageCircle } from 'lucide-react';
+import { Shield, Ban, Trash2, RefreshCw, Users, MessageCircle, Power, UserCog, Crown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Switch } from '@/components/ui/switch';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 interface SessionData {
   id: string;
@@ -50,7 +57,9 @@ export const Admin = () => {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [profiles, setProfiles] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
-  const { session: currentSession } = useAuth();
+  const [siteEnabled, setSiteEnabled] = useState(true);
+  const [isTogglingsite, setIsTogglingSite] = useState(false);
+  const { session: currentSession, isOwner } = useAuth();
   const { toast } = useToast();
 
   const fetchData = async () => {
@@ -94,6 +103,18 @@ export const Admin = () => {
         profileMap[p.session_id] = p.username;
       });
       setProfiles(profileMap);
+
+      // Fetch site settings
+      const { data: siteData } = await supabase
+        .from('site_settings')
+        .select('value')
+        .eq('key', 'site_enabled')
+        .single();
+      
+      if (siteData?.value && typeof siteData.value === 'object' && !Array.isArray(siteData.value)) {
+        const value = siteData.value as { enabled?: boolean };
+        setSiteEnabled(value.enabled ?? true);
+      }
       
     } catch (err) {
       console.error('Fetch error:', err);
@@ -273,6 +294,90 @@ export const Admin = () => {
     return profiles[sessionId] || 'Unknown';
   };
 
+  const toggleSite = async () => {
+    if (!isOwner) return;
+    
+    setIsTogglingSite(true);
+    try {
+      const device_id = getDeviceId();
+      const newEnabled = !siteEnabled;
+      
+      const { data, error } = await supabase.functions.invoke('admin-operations', {
+        body: { 
+          action: 'toggle_site',
+          device_id,
+          enabled: newEnabled
+        }
+      });
+
+      if (error || data?.error) {
+        toast({
+          title: "Failed to toggle site",
+          description: data?.error || error?.message,
+          variant: "destructive"
+        });
+        return;
+      }
+
+      setSiteEnabled(newEnabled);
+      toast({
+        title: newEnabled ? "Site Enabled" : "Site Disabled",
+        description: newEnabled 
+          ? "All users can now access the site." 
+          : "Only owners can access the site now."
+      });
+    } catch (err) {
+      console.error('Toggle site error:', err);
+      toast({
+        title: "Error",
+        description: "Failed to toggle site status",
+        variant: "destructive"
+      });
+    } finally {
+      setIsTogglingSite(false);
+    }
+  };
+
+  const changeUserRole = async (targetDeviceId: string, newRole: string) => {
+    if (!isOwner) return;
+
+    try {
+      const device_id = getDeviceId();
+      
+      const { data, error } = await supabase.functions.invoke('admin-operations', {
+        body: { 
+          action: 'change_role',
+          device_id,
+          target_device_id: targetDeviceId,
+          new_role: newRole
+        }
+      });
+
+      if (error || data?.error) {
+        toast({
+          title: "Failed to change role",
+          description: data?.error || error?.message,
+          variant: "destructive"
+        });
+        return;
+      }
+
+      toast({
+        title: "Role Changed",
+        description: `User role changed to ${newRole}`
+      });
+
+      fetchData();
+    } catch (err) {
+      console.error('Change role error:', err);
+      toast({
+        title: "Error",
+        description: "Failed to change user role",
+        variant: "destructive"
+      });
+    }
+  };
+
   return (
     <div className="p-6 max-w-4xl mx-auto animate-fade-in space-y-8">
       {/* Header */}
@@ -296,6 +401,43 @@ export const Admin = () => {
           Refresh
         </Button>
       </div>
+
+      {/* Owner Controls */}
+      {isOwner && (
+        <section className="space-y-4">
+          <div className="flex items-center gap-2">
+            <Crown className="h-5 w-5 text-purple-500" />
+            <h2 className="font-mono font-bold text-purple-500">Owner Controls</h2>
+          </div>
+          
+          <div className="border border-purple-500/30 rounded-lg p-4 bg-purple-500/5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Power className={cn("h-5 w-5", siteEnabled ? "text-green-500" : "text-destructive")} />
+                <div>
+                  <p className="font-medium">Site Status</p>
+                  <p className="text-sm text-muted-foreground">
+                    {siteEnabled ? "Site is accessible to all users" : "Site is disabled for non-owners"}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className={cn(
+                  "text-sm font-mono",
+                  siteEnabled ? "text-green-500" : "text-destructive"
+                )}>
+                  {siteEnabled ? "ENABLED" : "DISABLED"}
+                </span>
+                <Switch
+                  checked={siteEnabled}
+                  onCheckedChange={toggleSite}
+                  disabled={isTogglingsite}
+                />
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Active Sessions */}
       <section className="space-y-4">
@@ -335,12 +477,52 @@ export const Admin = () => {
                     {sess.device_id.slice(0, 8)}...
                   </td>
                   <td className="px-4 py-3">
-                    <span className={cn(
-                      "px-2 py-1 rounded-full text-xs font-mono",
-                      sess.role === 'admin' ? "bg-primary/20 text-primary" : "bg-secondary text-muted-foreground"
-                    )}>
-                      {sess.role}
-                    </span>
+                    {isOwner && sess.device_id !== currentSession?.device_id && sess.role !== 'owner' ? (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button 
+                            variant="ghost" 
+                            size="sm"
+                            className={cn(
+                              "px-2 py-1 h-auto rounded-full text-xs font-mono gap-1",
+                              sess.role === 'owner' 
+                                ? "bg-purple-500/20 text-purple-500"
+                                : sess.role === 'admin' 
+                                  ? "bg-primary/20 text-primary" 
+                                  : "bg-secondary text-muted-foreground"
+                            )}
+                          >
+                            <UserCog className="h-3 w-3" />
+                            {sess.role}
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent>
+                          <DropdownMenuItem 
+                            onClick={() => changeUserRole(sess.device_id, 'user')}
+                            className={sess.role === 'user' ? "bg-primary/10" : ""}
+                          >
+                            User
+                          </DropdownMenuItem>
+                          <DropdownMenuItem 
+                            onClick={() => changeUserRole(sess.device_id, 'admin')}
+                            className={sess.role === 'admin' ? "bg-primary/10" : ""}
+                          >
+                            Admin
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    ) : (
+                      <span className={cn(
+                        "px-2 py-1 rounded-full text-xs font-mono",
+                        sess.role === 'owner' 
+                          ? "bg-purple-500/20 text-purple-500"
+                          : sess.role === 'admin' 
+                            ? "bg-primary/20 text-primary" 
+                            : "bg-secondary text-muted-foreground"
+                      )}>
+                        {sess.role}
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <span className={cn(
