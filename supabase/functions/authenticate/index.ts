@@ -58,10 +58,13 @@ serve(async (req) => {
       );
     }
 
-    // Verify password - check owner first, then admin, then user
-    const isOwner = password === ownerPassword;
-    const isAdmin = password === adminPassword;
-    const isUser = password === userPassword;
+    // Verify password - case-insensitive + trims whitespace (avoids mobile auto-lowercase issues)
+    const normalizedPassword = String(password).trim();
+
+    // check owner first, then admin, then user
+    const isOwner = normalizedPassword.toLowerCase() === ownerPassword.toLowerCase();
+    const isAdmin = normalizedPassword.toLowerCase() === adminPassword.toLowerCase();
+    const isUser = normalizedPassword.toLowerCase() === userPassword.toLowerCase();
 
     if (!isOwner && !isAdmin && !isUser) {
       console.log('Auth: invalid password attempt');
