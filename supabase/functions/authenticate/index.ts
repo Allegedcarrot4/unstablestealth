@@ -10,13 +10,19 @@ const allowedOrigins = [
 ];
 
 const getCorsHeaders = (origin: string | null) => {
-  const allowedOrigin = origin && allowedOrigins.some(allowed => 
-    origin === allowed || origin.endsWith('.lovable.dev') || origin.endsWith('.gptengineer.app')
-  ) ? origin : allowedOrigins[0];
-  
+  const allowedOrigin =
+    origin &&
+    (allowedOrigins.includes(origin) ||
+      origin.endsWith('.lovable.dev') ||
+      origin.endsWith('.gptengineer.app') ||
+      origin.endsWith('.lovableproject.com'))
+      ? origin
+      : allowedOrigins[0];
+
   return {
     'Access-Control-Allow-Origin': allowedOrigin,
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
   };
 };
 
