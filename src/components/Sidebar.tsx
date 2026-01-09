@@ -8,7 +8,8 @@ import {
   Crown,
   MessageCircle,
   Sparkles,
-  Bot
+  Bot,
+  Gamepad2
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSettings } from '@/contexts/SettingsContext';
@@ -21,6 +22,7 @@ const navItems = [
   { path: '/', icon: Globe, label: 'Embedder' },
   { path: '/chat', icon: MessageCircle, label: 'Chat' },
   { path: '/ai', icon: Sparkles, label: 'AI' },
+  { path: '/games', icon: Gamepad2, label: 'Games' },
   { path: '/settings', icon: Settings, label: 'Settings' },
 ];
 
