@@ -15,7 +15,8 @@ const getCorsHeaders = (origin: string | null) => {
     (allowedOrigins.includes(origin) ||
       origin.endsWith('.lovable.dev') ||
       origin.endsWith('.gptengineer.app') ||
-      origin.endsWith('.lovableproject.com'))
+      origin.endsWith('.lovableproject.com') ||
+      origin.endsWith('.lovable.app'))
       ? origin
       : allowedOrigins[0];
 
