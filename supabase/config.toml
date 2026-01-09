@@ -23,3 +23,6 @@ verify_jwt = false
 
 [functions.owner-agent]
 verify_jwt = false
+
+[functions.manage-games]
+verify_jwt = false
