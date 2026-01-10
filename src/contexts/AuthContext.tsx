@@ -70,11 +70,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   // Check for existing session on mount
+  // SECURITY: Sessions table is blocked from client reads.
+  // We rely on stored session data from last authenticate call.
   useEffect(() => {
     const checkSession = async () => {
       const deviceId = getDeviceId();
       
-      // Check if banned first
+      // Check if banned first (banned_devices is publicly readable)
       const isBanned = await checkBanStatus();
       if (isBanned) {
         setSession({ id: '', device_id: deviceId, role: 'user', is_banned: true });
@@ -82,43 +84,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
       
-      // Check for existing session
-      const { data: existingSession } = await supabase
-        .from('sessions')
-        .select('*')
-        .eq('device_id', deviceId)
-        .maybeSingle();
-      
-      if (existingSession && !existingSession.is_banned) {
-        // Check for profile/username
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('username')
-          .eq('session_id', existingSession.id)
-          .maybeSingle();
-        
-        setSession({
-          id: existingSession.id,
-          device_id: existingSession.device_id,
-          role: existingSession.role as 'user' | 'admin' | 'owner',
-          is_banned: existingSession.is_banned,
-          username: profile?.username
-        });
-        
-        if (!profile?.username) {
-          setNeedsUsername(true);
-        }
-        
-        // Update last active
-        await supabase
-          .from('sessions')
-          .update({ last_active_at: new Date().toISOString() })
-          .eq('id', existingSession.id);
-        
-        // Check site status for non-owners
-        if (existingSession.role !== 'owner') {
-          const isDisabled = await checkSiteStatus();
-          setSiteDisabled(isDisabled);
+      // Try to restore session from localStorage (stored after successful login)
+      const storedSession = localStorage.getItem('session_data');
+      if (storedSession) {
+        try {
+          const parsed = JSON.parse(storedSession);
+          // Validate the stored session belongs to this device
+          if (parsed.device_id === deviceId) {
+            setSession({
+              id: parsed.id,
+              device_id: parsed.device_id,
+              role: parsed.role as 'user' | 'admin' | 'owner',
+              is_banned: false,
+              username: parsed.username
+            });
+            
+            if (!parsed.username) {
+              setNeedsUsername(true);
+            }
+            
+            // Check site status for non-owners
+            if (parsed.role !== 'owner') {
+              const isDisabled = await checkSiteStatus();
+              setSiteDisabled(isDisabled);
+            }
+          }
+        } catch {
+          // Invalid stored session, clear it
+          localStorage.removeItem('session_data');
         }
       }
       
@@ -148,13 +141,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { success: false, error: data.error };
       }
 
-      setSession({
+      const sessionData = {
         id: data.session.id,
         device_id: data.session.device_id,
         role: data.session.role as 'user' | 'admin' | 'owner',
         is_banned: data.session.is_banned,
         username: data.session.username
-      });
+      };
+      
+      setSession(sessionData);
+      
+      // SECURITY: Store session data locally since sessions table is blocked from client reads
+      localStorage.setItem('session_data', JSON.stringify(sessionData));
 
       if (data.needsUsername) {
         setNeedsUsername(true);
@@ -191,8 +189,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { success: false, error: data.error };
       }
 
-      setSession(prev => prev ? { ...prev, username: data.username } : null);
+      const updatedSession = session ? { ...session, username: data.username } : null;
+      setSession(updatedSession);
       setNeedsUsername(false);
+      
+      // Update stored session data
+      if (updatedSession) {
+        localStorage.setItem('session_data', JSON.stringify(updatedSession));
+      }
       
       return { success: true };
     } catch (error) {
@@ -201,12 +205,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = async () => {
-    const deviceId = getDeviceId();
+    // Clear local session data
+    localStorage.removeItem('session_data');
     
-    await supabase
-      .from('sessions')
-      .delete()
-      .eq('device_id', deviceId);
+    // Note: We can't delete from sessions table directly anymore (RLS blocks it)
+    // The session will remain in DB but user is logged out locally
+    // Admin can ban the device if needed
     
     setSession(null);
     setNeedsUsername(false);
