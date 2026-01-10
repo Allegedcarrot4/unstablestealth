@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Send, Sparkles, AlertCircle, Crown, ChevronDown } from 'lucide-react';
+import { useState } from 'react';
+import { Send, Sparkles, Crown, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -25,11 +25,6 @@ interface AIModel {
   cost: string;
 }
 
-// Weekly limits by role
-const USER_WEEKLY_LIMIT = 5;
-const ADMIN_WEEKLY_LIMIT = 10;
-const STORAGE_KEY = 'ai_weekly_usage';
-
 // Cheapest model for regular users
 const DEFAULT_MODEL = 'google/gemini-2.5-flash-lite';
 
@@ -53,69 +48,23 @@ const getDeviceId = (): string => {
   return deviceId;
 };
 
-// Get the start of the current week (Sunday)
-const getWeekStart = (): string => {
-  const now = new Date();
-  const dayOfWeek = now.getDay();
-  const diff = now.getDate() - dayOfWeek;
-  const weekStart = new Date(now.setDate(diff));
-  weekStart.setHours(0, 0, 0, 0);
-  return weekStart.toISOString().split('T')[0];
-};
-
-const getUsageData = () => {
-  const stored = localStorage.getItem(STORAGE_KEY);
-  const currentWeek = getWeekStart();
-  
-  if (!stored) return { weekStart: currentWeek, count: 0 };
-  
-  const data = JSON.parse(stored);
-  // Reset if it's a new week
-  if (data.weekStart !== currentWeek) {
-    return { weekStart: currentWeek, count: 0 };
-  }
-  return data;
-};
-
-const saveUsageData = (count: number) => {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify({
-    weekStart: getWeekStart(),
-    count
-  }));
-};
+// NOTE: Usage limits are now enforced SERVER-SIDE in the ai-chat edge function.
+// The server will return a 429 error when weekly limit is exceeded.
 
 export const AI = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [questionsUsed, setQuestionsUsed] = useState(0);
+  const [isLimitReached, setIsLimitReached] = useState(false);
   const [selectedModel, setSelectedModel] = useState<AIModel>(AVAILABLE_MODELS[0]);
   const { toast } = useToast();
   const { isAdmin, isOwner } = useAuth();
 
-  // Owners have unlimited, admins get 10/week, users get 5/week
+  // Owners have unlimited access
   const hasUnlimitedAccess = isOwner;
-  const weeklyLimit = isOwner ? Infinity : isAdmin ? ADMIN_WEEKLY_LIMIT : USER_WEEKLY_LIMIT;
-
-  useEffect(() => {
-    const usage = getUsageData();
-    setQuestionsUsed(usage.count);
-  }, []);
-
-  // Calculate remaining questions
-  const questionsRemaining = hasUnlimitedAccess ? Infinity : weeklyLimit - questionsUsed;
 
   const sendMessage = async () => {
-    if (!input.trim() || isLoading) return;
-
-    if (!hasUnlimitedAccess && questionsRemaining <= 0) {
-      toast({
-        title: "Weekly limit reached",
-        description: `You've used all ${weeklyLimit} questions for this week. Come back next week!`,
-        variant: "destructive"
-      });
-      return;
-    }
+    if (!input.trim() || isLoading || isLimitReached) return;
 
     const userMessage: Message = { role: 'user', content: input.trim() };
     setMessages(prev => [...prev, userMessage]);
@@ -141,13 +90,19 @@ export const AI = () => {
       const hasPremiumAccess = isAdmin || isOwner;
       const modelToUse = hasPremiumAccess ? selectedModel.id : DEFAULT_MODEL;
 
-      // Call the secure edge function
+      // Call the secure edge function (limits enforced server-side)
       const { data, error } = await supabase.functions.invoke('ai-chat', {
         body: { messages: geminiMessages, device_id, model: modelToUse }
       });
 
       if (error) {
         throw new Error(error.message || 'Failed to get response');
+      }
+
+      // Check for limit_reached flag from server
+      if (data?.limit_reached) {
+        setIsLimitReached(true);
+        throw new Error(data.error);
       }
 
       if (data?.error) {
@@ -160,13 +115,6 @@ export const AI = () => {
       };
 
       setMessages(prev => [...prev, assistantMessage]);
-      
-      // Only track usage for users with limits (not owners)
-      if (!hasUnlimitedAccess) {
-        const newCount = questionsUsed + 1;
-        setQuestionsUsed(newCount);
-        saveUsageData(newCount);
-      }
 
     } catch (error) {
       console.error('AI error:', error);
@@ -220,29 +168,29 @@ export const AI = () => {
             </DropdownMenu>
           )}
           
-          {/* Usage indicator */}
+          {/* Role indicator */}
           <div className={cn(
             "flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-mono",
             hasUnlimitedAccess 
               ? "bg-purple-500/10 text-purple-500"
               : isAdmin
                 ? "bg-yellow-500/10 text-yellow-500"
-                : questionsRemaining > 2 
-                  ? "bg-primary/10 text-primary" 
-                  : questionsRemaining > 0 
-                    ? "bg-yellow-500/10 text-yellow-500"
-                    : "bg-destructive/10 text-destructive"
+                : isLimitReached
+                  ? "bg-destructive/10 text-destructive"
+                  : "bg-primary/10 text-primary"
           )}>
             {hasUnlimitedAccess ? (
               <>
                 <Crown className="h-4 w-4" />
                 Unlimited
               </>
-            ) : (
+            ) : isAdmin ? (
               <>
-                <AlertCircle className="h-4 w-4" />
-                {questionsRemaining}/{weeklyLimit} this week
+                <Crown className="h-4 w-4" />
+                Admin (10/week)
               </>
+            ) : (
+              <span>{isLimitReached ? 'Limit reached' : 'User (5/week)'}</span>
             )}
           </div>
         </div>
@@ -258,8 +206,8 @@ export const AI = () => {
                 {hasUnlimitedAccess 
                   ? "Ask me anything! You have unlimited messages as an owner."
                   : isAdmin
-                    ? `Ask me anything! You have ${questionsRemaining} questions remaining this week.`
-                    : `Ask me anything! You have ${questionsRemaining} questions remaining this week.`
+                    ? "Ask me anything! You have 10 questions per week."
+                    : "Ask me anything! You have 5 questions per week."
                 }
               </p>
             </div>
@@ -295,13 +243,13 @@ export const AI = () => {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()}
-          placeholder={hasUnlimitedAccess || questionsRemaining > 0 ? "Ask something..." : "Weekly limit reached"}
-          disabled={isLoading || (!hasUnlimitedAccess && questionsRemaining <= 0)}
+          placeholder={isLimitReached && !hasUnlimitedAccess ? "Weekly limit reached" : "Ask something..."}
+          disabled={isLoading || (isLimitReached && !hasUnlimitedAccess)}
           className="flex-1"
         />
         <Button 
           onClick={sendMessage} 
-          disabled={isLoading || !input.trim() || (!hasUnlimitedAccess && questionsRemaining <= 0)}
+          disabled={isLoading || !input.trim() || (isLimitReached && !hasUnlimitedAccess)}
           size="icon"
         >
           <Send className="h-4 w-4" />

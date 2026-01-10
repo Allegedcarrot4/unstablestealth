@@ -81,6 +81,72 @@ serve(async (req) => {
     }
 
     const isAdminOrOwner = session.role === 'admin' || session.role === 'owner';
+    const isOwner = session.role === 'owner';
+    
+    // Weekly limits: owners unlimited, admins 10, users 5
+    const weeklyLimit = isOwner ? Infinity : isAdminOrOwner ? 10 : 5;
+    
+    // SERVER-SIDE USAGE LIMIT ENFORCEMENT
+    if (!isOwner) {
+      // Calculate week start (Sunday)
+      const now = new Date();
+      const dayOfWeek = now.getUTCDay();
+      const diff = now.getUTCDate() - dayOfWeek;
+      const weekStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), diff));
+      const weekStartStr = weekStart.toISOString().split('T')[0];
+      
+      // Get or create usage record
+      let { data: usageData } = await supabase
+        .from('ai_usage')
+        .select('request_count')
+        .eq('session_id', session.id)
+        .eq('week_start', weekStartStr)
+        .maybeSingle();
+      
+      if (!usageData) {
+        // Create new usage record for this week
+        const { data: newUsage, error: insertError } = await supabase
+          .from('ai_usage')
+          .insert({ session_id: session.id, week_start: weekStartStr, request_count: 0 })
+          .select('request_count')
+          .single();
+        
+        if (insertError) {
+          console.error('AI-chat: failed to create usage record', { error: insertError.message });
+          return new Response(
+            JSON.stringify({ error: 'Failed to track usage' }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+        usageData = newUsage;
+      }
+      
+      // Check if limit exceeded
+      if (usageData.request_count >= weeklyLimit) {
+        console.log('AI-chat: weekly limit exceeded', { session_id: session.id, count: usageData.request_count, limit: weeklyLimit });
+        return new Response(
+          JSON.stringify({ 
+            error: `Weekly limit of ${weeklyLimit} questions reached. Resets Sunday.`,
+            limit_reached: true
+          }),
+          { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      
+      // Increment usage BEFORE API call (prevents race conditions)
+      const { error: updateError } = await supabase
+        .from('ai_usage')
+        .update({ 
+          request_count: usageData.request_count + 1,
+          updated_at: new Date().toISOString()
+        })
+        .eq('session_id', session.id)
+        .eq('week_start', weekStartStr);
+      
+      if (updateError) {
+        console.error('AI-chat: failed to update usage', { error: updateError.message });
+      }
+    }
     
     // Determine which model to use
     let modelToUse = DEFAULT_MODEL;
