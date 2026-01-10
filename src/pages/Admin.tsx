@@ -141,6 +141,25 @@ export const Admin = () => {
       return;
     }
 
+    const targetSession = sessions.find(s => s.device_id === targetDeviceId);
+    if (targetSession?.role === 'owner') {
+      toast({
+        title: "Action blocked",
+        description: "Cannot ban an owner",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (targetSession?.role === 'admin' && !isOwner) {
+      toast({
+        title: "Action blocked",
+        description: "Only owners can ban admins",
+        variant: "destructive"
+      });
+      return;
+    }
+
     try {
       const device_id = getDeviceId();
       
@@ -542,6 +561,14 @@ export const Admin = () => {
                           variant="ghost"
                           size="icon"
                           onClick={() => banDevice(sess.device_id)}
+                          disabled={sess.role === 'owner' || (sess.role === 'admin' && !isOwner)}
+                          title={
+                            sess.role === 'owner'
+                              ? 'Cannot ban an owner'
+                              : sess.role === 'admin' && !isOwner
+                                ? 'Only owners can ban admins'
+                                : 'Ban device'
+                          }
                           className="h-8 w-8 text-destructive hover:text-destructive"
                         >
                           <Ban className="h-4 w-4" />
