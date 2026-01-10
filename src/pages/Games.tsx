@@ -517,20 +517,22 @@ export default function Games() {
         </div>
       ) : (
         <div className="flex-1 overflow-y-auto">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
             {games.map((game) => (
               <Card
                 key={game.id}
                 className="cursor-pointer hover:ring-2 hover:ring-primary/50 transition-all overflow-hidden"
                 onClick={() => setSelectedGame(game)}
               >
-                {game.image_url ? (
-                  <img src={game.image_url} alt={game.title} className="w-full h-40 object-cover" loading="lazy" />
-                ) : (
-                  <div className="w-full h-40 bg-muted flex items-center justify-center">
-                    <Gamepad2 className="h-12 w-12 text-muted-foreground" />
-                  </div>
-                )}
+                <div className="aspect-square w-full overflow-hidden">
+                  {game.image_url ? (
+                    <img src={game.image_url} alt={game.title} className="w-full h-full object-cover" loading="lazy" />
+                  ) : (
+                    <div className="w-full h-full bg-muted flex items-center justify-center">
+                      <Gamepad2 className="h-12 w-12 text-muted-foreground" />
+                    </div>
+                  )}
+                </div>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-lg flex items-center justify-between gap-2">
                     <span className="truncate">{game.title}</span>
