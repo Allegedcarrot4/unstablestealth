@@ -3,12 +3,67 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <!-- TODO: Set the document title to the name of your application -->
+    
+    <!-- Security: Strict Content Security Policy -->
+    <meta http-equiv="Content-Security-Policy" content="
+      default-src 'self';
+      script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:;
+      style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+      font-src 'self' https://fonts.gstatic.com;
+      img-src 'self' data: blob: https:;
+      connect-src 'self' https://*.supabase.co wss://*.supabase.co https://openrouter.ai https://api.openrouter.ai;
+      frame-src 'self' blob: data: https:;
+      object-src 'none';
+      base-uri 'self';
+      form-action 'self';
+      frame-ancestors 'self';
+      upgrade-insecure-requests;
+    ">
+    
+    <!-- Security: Prevent MIME type sniffing -->
+    <meta http-equiv="X-Content-Type-Options" content="nosniff">
+    
+    <!-- Security: Prevent clickjacking -->
+    <meta http-equiv="X-Frame-Options" content="SAMEORIGIN">
+    
+    <!-- Security: XSS Protection -->
+    <meta http-equiv="X-XSS-Protection" content="1; mode=block">
+    
+    <!-- Security: Referrer Policy -->
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    
+    <!-- Security: Permissions Policy - disable unnecessary APIs -->
+    <meta http-equiv="Permissions-Policy" content="
+      accelerometer=(),
+      ambient-light-sensor=(),
+      autoplay=(),
+      battery=(),
+      camera=(),
+      display-capture=(),
+      document-domain=(),
+      encrypted-media=(),
+      execution-while-not-rendered=(),
+      execution-while-out-of-viewport=(),
+      geolocation=(),
+      gyroscope=(),
+      magnetometer=(),
+      microphone=(),
+      midi=(),
+      navigation-override=(),
+      payment=(),
+      picture-in-picture=(),
+      publickey-credentials-get=(),
+      screen-wake-lock=(),
+      sync-xhr=(),
+      usb=(),
+      web-share=(),
+      xr-spatial-tracking=()
+    ">
+    
     <title>Unstable Stealth</title>
     <meta name="description" content="Unstable Stealth - Stealth browser and game embedder" />
     <meta name="author" content="Lovable" />
 
-    <!-- TODO: Update og:title to match your application name -->
     <meta property="og:title" content="Unstable Stealth" />
     <meta property="og:description" content="Unstable Stealth - Stealth browser and game embedder" />
     <meta property="og:type" content="website" />
@@ -17,6 +72,47 @@
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:site" content="@Lovable" />
     <meta name="twitter:image" content="https://lovable.dev/opengraph-image-p98pqg.png" />
+    
+    <!-- Block extension injection early -->
+    <script>
+      (function() {
+        // Immediately block extension APIs
+        try {
+          Object.defineProperty(window, 'chrome', {
+            get: function() { return { runtime: undefined, extension: undefined }; },
+            set: function() {},
+            configurable: false
+          });
+        } catch(e) {}
+        
+        try {
+          Object.defineProperty(window, 'browser', {
+            get: function() { return undefined; },
+            set: function() {},
+            configurable: false
+          });
+        } catch(e) {}
+        
+        // Block common extension message channels
+        var originalAddEventListener = window.addEventListener;
+        window.addEventListener = function(type, listener, options) {
+          if (type === 'message') {
+            var wrappedListener = function(event) {
+              if (event.origin && (
+                event.origin.includes('chrome-extension://') ||
+                event.origin.includes('moz-extension://') ||
+                event.origin.includes('ms-browser-extension://')
+              )) {
+                return;
+              }
+              return listener.apply(this, arguments);
+            };
+            return originalAddEventListener.call(this, type, wrappedListener, options);
+          }
+          return originalAddEventListener.call(this, type, listener, options);
+        };
+      })();
+    </script>
   </head>
 
   <body>
