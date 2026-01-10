@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -13,6 +13,7 @@ import {
   FileUp,
   Gamepad2,
   Image as ImageIcon,
+  Maximize,
   Pencil,
   Plus,
   Trash2,
@@ -62,6 +63,53 @@ function fileToDataUrl(file: File): Promise<string> {
     reader.onload = () => resolve(reader.result as string);
     reader.readAsDataURL(file);
   });
+}
+
+function GamePlayerDialog({ game, onClose }: { game: Game | null; onClose: () => void }) {
+  const gameContainerRef = useRef<HTMLDivElement>(null);
+
+  const handleFullscreen = () => {
+    if (!gameContainerRef.current) return;
+    
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    } else {
+      gameContainerRef.current.requestFullscreen().catch((err) => {
+        console.error('Fullscreen failed:', err);
+      });
+    }
+  };
+
+  return (
+    <Dialog open={!!game} onOpenChange={() => onClose()}>
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden">
+        <DialogHeader>
+          <DialogTitle className="flex items-center justify-between gap-2">
+            <span className="flex items-center gap-2">
+              <Gamepad2 className="h-5 w-5" />
+              {game?.title}
+            </span>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={handleFullscreen}
+              title="Fullscreen"
+              className="h-8 w-8"
+            >
+              <Maximize className="h-4 w-4" />
+            </Button>
+          </DialogTitle>
+        </DialogHeader>
+        <div
+          ref={gameContainerRef}
+          className="mt-4 overflow-auto bg-background"
+          style={{ maxHeight: 'calc(90vh - 120px)' }}
+        >
+          <div className="game-embed" dangerouslySetInnerHTML={{ __html: game?.source_code || '' }} />
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 export default function Games() {
@@ -653,19 +701,7 @@ export default function Games() {
       </Dialog>
 
       {/* Game Player Dialog */}
-      <Dialog open={!!selectedGame} onOpenChange={() => setSelectedGame(null)}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Gamepad2 className="h-5 w-5" />
-              {selectedGame?.title}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="mt-4 overflow-auto" style={{ maxHeight: 'calc(90vh - 120px)' }}>
-            <div className="game-embed" dangerouslySetInnerHTML={{ __html: selectedGame?.source_code || '' }} />
-          </div>
-        </DialogContent>
-      </Dialog>
+      <GamePlayerDialog game={selectedGame} onClose={() => setSelectedGame(null)} />
     </div>
   );
 }
