@@ -28,10 +28,11 @@ interface Game {
 }
 
 const getDeviceId = () => {
-  let deviceId = localStorage.getItem('device_id');
+  // IMPORTANT: must match key in AuthContext ('deviceId' camelCase)
+  let deviceId = localStorage.getItem('deviceId');
   if (!deviceId) {
     deviceId = crypto.randomUUID();
-    localStorage.setItem('device_id', deviceId);
+    localStorage.setItem('deviceId', deviceId);
   }
   return deviceId;
 };
