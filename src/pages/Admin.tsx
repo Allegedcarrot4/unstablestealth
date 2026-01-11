@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
-import { Shield, Ban, Trash2, RefreshCw, Users, MessageCircle, Power, UserCog, Crown } from 'lucide-react';
+import { Shield, Ban, Trash2, RefreshCw, Users, MessageCircle, Power, UserCog, Crown, Megaphone, Plus, ToggleLeft, ToggleRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Switch } from '@/components/ui/switch';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
@@ -13,6 +15,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 
 interface SessionData {
   id: string;
@@ -42,6 +51,15 @@ interface Profile {
   username: string;
 }
 
+interface Announcement {
+  id: string;
+  message: string;
+  created_by: string;
+  created_at: string;
+  expires_at: string | null;
+  is_active: boolean;
+}
+
 const getDeviceId = (): string => {
   let deviceId = localStorage.getItem('deviceId');
   if (!deviceId) {
@@ -56,9 +74,14 @@ export const Admin = () => {
   const [bannedDevices, setBannedDevices] = useState<BannedDevice[]>([]);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [profiles, setProfiles] = useState<Record<string, string>>({});
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [siteEnabled, setSiteEnabled] = useState(true);
   const [isTogglingsite, setIsTogglingSite] = useState(false);
+  const [newAnnouncementOpen, setNewAnnouncementOpen] = useState(false);
+  const [newAnnouncementText, setNewAnnouncementText] = useState('');
+  const [announcementExpiry, setAnnouncementExpiry] = useState('');
+  const [isCreatingAnnouncement, setIsCreatingAnnouncement] = useState(false);
   const { session: currentSession, isOwner } = useAuth();
   const { toast } = useToast();
 
@@ -114,6 +137,16 @@ export const Admin = () => {
       if (siteData?.value && typeof siteData.value === 'object' && !Array.isArray(siteData.value)) {
         const value = siteData.value as { enabled?: boolean };
         setSiteEnabled(value.enabled ?? true);
+      }
+
+      // Fetch announcements
+      const { data: announcementsData } = await supabase
+        .from('announcements')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (announcementsData) {
+        setAnnouncements(announcementsData as Announcement[]);
       }
       
     } catch (err) {
@@ -397,6 +430,132 @@ export const Admin = () => {
     }
   };
 
+  const createAnnouncement = async () => {
+    if (!newAnnouncementText.trim()) {
+      toast({
+        title: "Error",
+        description: "Announcement message is required",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setIsCreatingAnnouncement(true);
+    try {
+      const device_id = getDeviceId();
+      const expiresHours = announcementExpiry ? parseInt(announcementExpiry) : null;
+      
+      const { data, error } = await supabase.functions.invoke('manage-announcements', {
+        body: { 
+          action: 'create',
+          device_id,
+          message: newAnnouncementText.trim(),
+          expires_hours: expiresHours
+        }
+      });
+
+      if (error || data?.error) {
+        toast({
+          title: "Failed to create announcement",
+          description: data?.error || error?.message,
+          variant: "destructive"
+        });
+        return;
+      }
+
+      toast({
+        title: "Announcement Created",
+        description: "Your announcement is now visible to all users"
+      });
+
+      setNewAnnouncementText('');
+      setAnnouncementExpiry('');
+      setNewAnnouncementOpen(false);
+      fetchData();
+    } catch (err) {
+      console.error('Create announcement error:', err);
+      toast({
+        title: "Error",
+        description: "Failed to create announcement",
+        variant: "destructive"
+      });
+    } finally {
+      setIsCreatingAnnouncement(false);
+    }
+  };
+
+  const deleteAnnouncement = async (announcementId: string) => {
+    try {
+      const device_id = getDeviceId();
+      
+      const { data, error } = await supabase.functions.invoke('manage-announcements', {
+        body: { 
+          action: 'delete',
+          device_id,
+          announcement_id: announcementId
+        }
+      });
+
+      if (error || data?.error) {
+        toast({
+          title: "Failed to delete announcement",
+          description: data?.error || error?.message,
+          variant: "destructive"
+        });
+        return;
+      }
+
+      toast({
+        title: "Announcement Deleted"
+      });
+
+      fetchData();
+    } catch (err) {
+      console.error('Delete announcement error:', err);
+      toast({
+        title: "Error",
+        description: "Failed to delete announcement",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const toggleAnnouncement = async (announcementId: string) => {
+    try {
+      const device_id = getDeviceId();
+      
+      const { data, error } = await supabase.functions.invoke('manage-announcements', {
+        body: { 
+          action: 'toggle',
+          device_id,
+          announcement_id: announcementId
+        }
+      });
+
+      if (error || data?.error) {
+        toast({
+          title: "Failed to toggle announcement",
+          description: data?.error || error?.message,
+          variant: "destructive"
+        });
+        return;
+      }
+
+      toast({
+        title: data?.is_active ? "Announcement Activated" : "Announcement Deactivated"
+      });
+
+      fetchData();
+    } catch (err) {
+      console.error('Toggle announcement error:', err);
+      toast({
+        title: "Error",
+        description: "Failed to toggle announcement",
+        variant: "destructive"
+      });
+    }
+  };
+
   return (
     <div className="p-6 max-w-4xl mx-auto animate-fade-in space-y-8">
       {/* Header */}
@@ -636,6 +795,125 @@ export const Admin = () => {
                 <tr>
                   <td colSpan={3} className="px-4 py-8 text-center text-muted-foreground">
                     No banned devices
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {/* Announcements */}
+      <section className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Megaphone className="h-5 w-5 text-primary" />
+            <h2 className="font-mono font-bold">Announcements ({announcements.length})</h2>
+          </div>
+          
+          <Dialog open={newAnnouncementOpen} onOpenChange={setNewAnnouncementOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm" className="gap-2">
+                <Plus className="h-4 w-4" />
+                New Announcement
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Create Announcement</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 mt-4">
+                <div className="space-y-2">
+                  <Label htmlFor="announcement-message">Message</Label>
+                  <Input
+                    id="announcement-message"
+                    value={newAnnouncementText}
+                    onChange={(e) => setNewAnnouncementText(e.target.value)}
+                    placeholder="Enter announcement message..."
+                    maxLength={500}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="announcement-expiry">Expires After (hours, optional)</Label>
+                  <Input
+                    id="announcement-expiry"
+                    type="number"
+                    min="1"
+                    value={announcementExpiry}
+                    onChange={(e) => setAnnouncementExpiry(e.target.value)}
+                    placeholder="Leave empty for no expiry"
+                  />
+                </div>
+                <Button 
+                  onClick={createAnnouncement} 
+                  disabled={isCreatingAnnouncement || !newAnnouncementText.trim()}
+                  className="w-full"
+                >
+                  {isCreatingAnnouncement ? 'Creating...' : 'Create Announcement'}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </div>
+        
+        <div className="border border-border rounded-lg overflow-hidden">
+          <table className="w-full">
+            <thead className="bg-secondary">
+              <tr>
+                <th className="px-4 py-3 text-left text-xs font-mono text-muted-foreground">Message</th>
+                <th className="px-4 py-3 text-left text-xs font-mono text-muted-foreground">Status</th>
+                <th className="px-4 py-3 text-left text-xs font-mono text-muted-foreground">Created</th>
+                <th className="px-4 py-3 text-left text-xs font-mono text-muted-foreground">Expires</th>
+                <th className="px-4 py-3 text-right text-xs font-mono text-muted-foreground">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {announcements.map((announcement) => (
+                <tr key={announcement.id} className="hover:bg-secondary/50 transition-colors">
+                  <td className="px-4 py-3 text-sm max-w-xs truncate">{announcement.message}</td>
+                  <td className="px-4 py-3">
+                    <span className={cn(
+                      "px-2 py-1 rounded-full text-xs font-mono",
+                      announcement.is_active ? "bg-green-500/20 text-green-500" : "bg-muted text-muted-foreground"
+                    )}>
+                      {announcement.is_active ? 'Active' : 'Inactive'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-sm text-muted-foreground">
+                    {formatDate(announcement.created_at)}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-muted-foreground">
+                    {announcement.expires_at ? formatDate(announcement.expires_at) : 'Never'}
+                  </td>
+                  <td className="px-4 py-3 text-right space-x-2">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => toggleAnnouncement(announcement.id)}
+                      title={announcement.is_active ? "Deactivate" : "Activate"}
+                      className="h-8 w-8"
+                    >
+                      {announcement.is_active ? (
+                        <ToggleRight className="h-4 w-4 text-green-500" />
+                      ) : (
+                        <ToggleLeft className="h-4 w-4" />
+                      )}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => deleteAnnouncement(announcement.id)}
+                      className="h-8 w-8 text-destructive hover:text-destructive"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+              {announcements.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
+                    No announcements yet
                   </td>
                 </tr>
               )}
