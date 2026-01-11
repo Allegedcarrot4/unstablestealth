@@ -49,12 +49,40 @@ export type Database = {
           },
         ]
       }
+      announcements: {
+        Row: {
+          created_at: string
+          created_by: string
+          expires_at: string | null
+          id: string
+          is_active: boolean
+          message: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          expires_at?: string | null
+          id?: string
+          is_active?: boolean
+          message: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          expires_at?: string | null
+          id?: string
+          is_active?: boolean
+          message?: string
+        }
+        Relationships: []
+      }
       banned_devices: {
         Row: {
           banned_at: string
           banned_by: string | null
           device_id: string
           id: string
+          ip_address: string | null
           reason: string | null
         }
         Insert: {
@@ -62,6 +90,7 @@ export type Database = {
           banned_by?: string | null
           device_id: string
           id?: string
+          ip_address?: string | null
           reason?: string | null
         }
         Update: {
@@ -69,6 +98,7 @@ export type Database = {
           banned_by?: string | null
           device_id?: string
           id?: string
+          ip_address?: string | null
           reason?: string | null
         }
         Relationships: [
@@ -198,6 +228,7 @@ export type Database = {
           created_at: string
           device_id: string
           id: string
+          ip_address: string | null
           is_banned: boolean
           last_active_at: string
           role: Database["public"]["Enums"]["app_role"]
@@ -206,6 +237,7 @@ export type Database = {
           created_at?: string
           device_id: string
           id?: string
+          ip_address?: string | null
           is_banned?: boolean
           last_active_at?: string
           role?: Database["public"]["Enums"]["app_role"]
@@ -214,6 +246,7 @@ export type Database = {
           created_at?: string
           device_id?: string
           id?: string
+          ip_address?: string | null
           is_banned?: boolean
           last_active_at?: string
           role?: Database["public"]["Enums"]["app_role"]
@@ -251,6 +284,27 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      typing_indicators: {
+        Row: {
+          id: string
+          is_typing: boolean
+          session_id: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          is_typing?: boolean
+          session_id: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          is_typing?: boolean
+          session_id?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
     }
     Views: {

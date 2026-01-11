@@ -26,3 +26,9 @@ verify_jwt = false
 
 [functions.manage-games]
 verify_jwt = false
+
+[functions.typing-indicator]
+verify_jwt = false
+
+[functions.manage-announcements]
+verify_jwt = false

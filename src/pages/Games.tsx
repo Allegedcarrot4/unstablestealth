@@ -16,6 +16,7 @@ import {
   Maximize,
   Pencil,
   Plus,
+  Search,
   Trash2,
   X,
 } from 'lucide-react';
@@ -116,6 +117,7 @@ export default function Games() {
   const { session, isOwner } = useAuth();
   const [games, setGames] = useState<Game[]>([]);
   const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Add dialog
   const [addDialogOpen, setAddDialogOpen] = useState(false);
@@ -138,6 +140,13 @@ export default function Games() {
 
   // Player dialog
   const [selectedGame, setSelectedGame] = useState<Game | null>(null);
+
+  // Filtered games based on search
+  const filteredGames = useMemo(() => {
+    if (!searchQuery.trim()) return games;
+    const query = searchQuery.toLowerCase();
+    return games.filter(game => game.title.toLowerCase().includes(query));
+  }, [games, searchQuery]);
 
   useEffect(() => {
     fetchGames();
@@ -375,13 +384,25 @@ export default function Games() {
 
   return (
     <div className="h-full flex flex-col p-4 md:p-6 overflow-hidden">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
         <div className="flex items-center gap-3">
           <Gamepad2 className="h-6 w-6 text-primary" />
           <h1 className="text-2xl font-bold">Games</h1>
         </div>
 
-        {canManage && (
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
+          {/* Search input */}
+          <div className="relative flex-1 sm:flex-none">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search games..."
+              className="pl-9 w-full sm:w-64"
+            />
+          </div>
+
+          {canManage && (
           <Dialog
             open={addDialogOpen}
             onOpenChange={(open) => {
@@ -503,22 +524,23 @@ export default function Games() {
             </DialogContent>
           </Dialog>
         )}
+        </div>
       </div>
 
       {loading ? (
         <div className="flex items-center justify-center flex-1">
           <p className="text-muted-foreground">Loading games…</p>
         </div>
-      ) : games.length === 0 ? (
+      ) : filteredGames.length === 0 ? (
         <div className="flex flex-col items-center justify-center flex-1 text-center">
           <Gamepad2 className="h-12 w-12 text-muted-foreground mb-4" />
-          <p className="text-muted-foreground">No games available yet.</p>
+          <p className="text-muted-foreground">{searchQuery ? 'No games match your search.' : 'No games available yet.'}</p>
           {canManage && <p className="text-sm text-muted-foreground mt-1">Click “Add Game” to get started!</p>}
         </div>
       ) : (
         <div className="flex-1 overflow-y-auto">
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {games.map((game) => (
+            {filteredGames.map((game) => (
               <Card
                 key={game.id}
                 className="cursor-pointer hover:ring-2 hover:ring-primary/50 transition-all overflow-hidden"
