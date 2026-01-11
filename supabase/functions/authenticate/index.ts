@@ -46,6 +46,11 @@ serve(async (req) => {
       );
     }
 
+    // Get client IP address
+    const clientIp = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() 
+      || req.headers.get('x-real-ip') 
+      || 'unknown';
+
     // Validate password against environment variables
     const ownerPassword = Deno.env.get('OWNER_PASSWORD');
     const adminPassword = Deno.env.get('ADMIN_PASSWORD');
@@ -97,6 +102,23 @@ serve(async (req) => {
       );
     }
 
+    // Check if IP is banned
+    if (clientIp !== 'unknown') {
+      const { data: ipBanData } = await supabase
+        .from('banned_devices')
+        .select('*')
+        .eq('ip_address', clientIp)
+        .maybeSingle();
+
+      if (ipBanData) {
+        console.log('Auth: banned IP attempt');
+        return new Response(
+          JSON.stringify({ error: 'Your IP address has been banned' }),
+          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+
     // Check for existing session
     const { data: existingSession } = await supabase
       .from('sessions')
@@ -107,10 +129,14 @@ serve(async (req) => {
     let sessionData;
 
     if (existingSession) {
-      // Update existing session
+      // Update existing session with IP
       const { data, error } = await supabase
         .from('sessions')
-        .update({ role, last_active_at: new Date().toISOString() })
+        .update({ 
+          role, 
+          last_active_at: new Date().toISOString(),
+          ip_address: clientIp !== 'unknown' ? clientIp : existingSession.ip_address
+        })
         .eq('id', existingSession.id)
         .select()
         .single();
@@ -124,10 +150,14 @@ serve(async (req) => {
       }
       sessionData = data;
     } else {
-      // Create new session
+      // Create new session with IP
       const { data, error } = await supabase
         .from('sessions')
-        .insert({ device_id, role })
+        .insert({ 
+          device_id, 
+          role,
+          ip_address: clientIp !== 'unknown' ? clientIp : null
+        })
         .select()
         .single();
 

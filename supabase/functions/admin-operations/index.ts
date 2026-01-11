@@ -30,7 +30,7 @@ serve(async (req) => {
   }
 
   try {
-    const { action, device_id, target_device_id, target_session_id, new_role, enabled } = await req.json();
+    const { action, device_id, target_device_id, target_session_id, target_ip, new_role, enabled } = await req.json();
 
     if (!action || !device_id) {
       return new Response(
@@ -147,6 +147,97 @@ serve(async (req) => {
         console.log('Admin-ops: device banned successfully');
         return new Response(
           JSON.stringify({ success: true, message: 'Device banned' }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      case 'ban_ip': {
+        if (!target_ip) {
+          return new Response(
+            JSON.stringify({ error: 'target_ip required' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        // Get all sessions with this IP to check roles
+        const { data: ipSessions } = await supabase
+          .from('sessions')
+          .select('role, device_id')
+          .eq('ip_address', target_ip);
+
+        // Check if any session is an owner
+        const hasOwner = ipSessions?.some(s => s.role === 'owner');
+        if (hasOwner) {
+          return new Response(
+            JSON.stringify({ error: 'Cannot ban an owner IP' }),
+            { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        // Check if any session is an admin and caller is not owner
+        const hasAdmin = ipSessions?.some(s => s.role === 'admin');
+        if (hasAdmin && !isOwner) {
+          return new Response(
+            JSON.stringify({ error: 'Only owners can ban admin IPs' }),
+            { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        // Insert IP ban
+        const { error: ipBanError } = await supabase
+          .from('banned_devices')
+          .insert({
+            ip_address: target_ip,
+            banned_by: callerSession.id
+          });
+
+        if (ipBanError) {
+          console.error('Admin-ops: IP ban failed');
+          return new Response(
+            JSON.stringify({ error: 'Failed to ban IP' }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        // Mark all sessions with this IP as banned
+        if (ipSessions && ipSessions.length > 0) {
+          const deviceIds = ipSessions.map(s => s.device_id);
+          await supabase
+            .from('sessions')
+            .update({ is_banned: true })
+            .in('device_id', deviceIds);
+        }
+
+        console.log('Admin-ops: IP banned successfully');
+        return new Response(
+          JSON.stringify({ success: true, message: 'IP banned', affected_sessions: ipSessions?.length || 0 }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      case 'unban_ip': {
+        if (!target_ip) {
+          return new Response(
+            JSON.stringify({ error: 'target_ip required' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        // Delete IP ban
+        await supabase
+          .from('banned_devices')
+          .delete()
+          .eq('ip_address', target_ip);
+
+        // Unban all sessions with this IP
+        await supabase
+          .from('sessions')
+          .update({ is_banned: false })
+          .eq('ip_address', target_ip);
+
+        console.log('Admin-ops: IP unbanned successfully');
+        return new Response(
+          JSON.stringify({ success: true, message: 'IP unbanned' }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }

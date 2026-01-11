@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { MessageCircle, Send, Users, Undo2, Trash2, EyeOff, Shield, Crown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,6 +7,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
+import { AnnouncementBanner } from '@/components/AnnouncementBanner';
+import { TypingIndicator } from '@/components/TypingIndicator';
 
 interface ChatMessage {
   id: string;
@@ -42,6 +44,8 @@ export const Chat = () => {
   const [sessionRoles, setSessionRoles] = useState<Record<string, 'user' | 'admin' | 'owner'>>({});
   const [newMessage, setNewMessage] = useState('');
   const [onlineCount, setOnlineCount] = useState(1);
+  const [isTyping, setIsTyping] = useState(false);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const { session, isAdmin, isOwner } = useAuth();
   const { toast } = useToast();
@@ -151,6 +155,37 @@ export const Chat = () => {
     }
   };
 
+  const updateTypingStatus = useCallback(async (typing: boolean) => {
+    const deviceId = localStorage.getItem('deviceId');
+    if (!deviceId) return;
+
+    try {
+      await supabase.functions.invoke('typing-indicator', {
+        body: { device_id: deviceId, is_typing: typing }
+      });
+    } catch (error) {
+      // Silently fail - typing indicator is non-critical
+    }
+  }, []);
+
+  const handleTyping = useCallback(() => {
+    if (!isTyping) {
+      setIsTyping(true);
+      updateTypingStatus(true);
+    }
+
+    // Clear existing timeout
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+
+    // Set new timeout to stop typing after 3 seconds of inactivity
+    typingTimeoutRef.current = setTimeout(() => {
+      setIsTyping(false);
+      updateTypingStatus(false);
+    }, 3000);
+  }, [isTyping, updateTypingStatus]);
+
   const sendMessage = async () => {
     if (!newMessage.trim() || !session) return;
 
@@ -158,6 +193,13 @@ export const Chat = () => {
     if (!deviceId) {
       console.error('No device ID found');
       return;
+    }
+
+    // Stop typing indicator
+    setIsTyping(false);
+    updateTypingStatus(false);
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
     }
 
     try {
@@ -321,6 +363,11 @@ export const Chat = () => {
 
   return (
     <div className="h-screen flex flex-col animate-fade-in">
+      {/* Announcements */}
+      <div className="p-4 pb-0 shrink-0">
+        <AnnouncementBanner />
+      </div>
+
       {/* Header */}
       <div className="p-4 border-b border-border shrink-0">
         <div className="flex items-center justify-between">
@@ -427,12 +474,20 @@ export const Chat = () => {
         </div>
       </ScrollArea>
 
+      {/* Typing Indicator */}
+      <TypingIndicator />
+
       {/* Input */}
       <div className="p-4 border-t border-border shrink-0">
         <div className="flex gap-2">
           <Input
             value={newMessage}
-            onChange={(e) => setNewMessage(e.target.value)}
+            onChange={(e) => {
+              setNewMessage(e.target.value);
+              if (e.target.value.trim()) {
+                handleTyping();
+              }
+            }}
             onKeyPress={handleKeyPress}
             placeholder="Type a message..."
             className="flex-1"
