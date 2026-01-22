@@ -7,6 +7,7 @@ import { SettingsProvider } from "./contexts/SettingsContext";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { MainLayout } from "./layouts/MainLayout";
 import { Embedder } from "./pages/Embedder";
+import { Proxy } from "./pages/Proxy";
 import { Chat } from "./pages/Chat";
 import { AI } from "./pages/AI";
 import { Settings } from "./pages/Settings";
@@ -119,6 +120,7 @@ const App = () => (
               }>
                 <Route path="/" element={<Embedder />} />
                 <Route path="/embedder" element={<Embedder />} />
+                <Route path="/proxy" element={<Proxy />} />
                 <Route path="/chat" element={<Chat />} />
                 <Route path="/ai" element={<AI />} />
                 <Route path="/games" element={<Games />} />
