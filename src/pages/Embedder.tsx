@@ -1,12 +1,14 @@
-import { useState, useRef, useCallback } from 'react';
-import { Search, Lock } from 'lucide-react';
+import { useState, useRef, useCallback, useEffect } from 'react';
+import { Search, Lock, Maximize, Minimize, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { EmbedControls } from '@/components/EmbedControls';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 export const Embedder = () => {
   const [url, setUrl] = useState('');
   const [embeddedUrl, setEmbeddedUrl] = useState('');
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -30,6 +32,9 @@ export const Embedder = () => {
   const handleClear = () => {
     setUrl('');
     setEmbeddedUrl('');
+    if (isFullscreen) {
+      document.exitFullscreen?.();
+    }
   };
 
   const handleNewTab = useCallback(() => {
@@ -57,7 +62,7 @@ export const Embedder = () => {
     }
   }, [embeddedUrl]);
 
-  const handleFullscreen = () => {
+  const handleFullscreen = useCallback(() => {
     if (containerRef.current) {
       if (document.fullscreenElement) {
         document.exitFullscreen();
@@ -65,7 +70,7 @@ export const Embedder = () => {
         containerRef.current.requestFullscreen();
       }
     }
-  };
+  }, []);
 
   const handleReload = () => {
     if (iframeRef.current) {
@@ -84,6 +89,16 @@ export const Embedder = () => {
       iframeRef.current.contentWindow.history.forward();
     }
   };
+
+  // Listen for fullscreen changes
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
 
   return (
     <div className="flex flex-col h-screen animate-fade-in">
@@ -119,16 +134,70 @@ export const Embedder = () => {
       {/* Embed Container - takes remaining space */}
       <div 
         ref={containerRef}
-        className="flex-1 mx-3 mb-3 rounded-lg overflow-hidden border border-border bg-card min-h-0"
+        className={`flex-1 mx-3 mb-3 rounded-lg overflow-hidden border border-border bg-card min-h-0 relative ${
+          isFullscreen ? 'fullscreen-container' : ''
+        }`}
+        style={isFullscreen ? {
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          width: '100vw',
+          height: '100vh',
+          margin: 0,
+          borderRadius: 0,
+          zIndex: 9999,
+          border: 'none'
+        } : undefined}
       >
         {embeddedUrl ? (
-          <iframe
-            ref={iframeRef}
-            src={embeddedUrl}
-            className="w-full h-full"
-            sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-modals"
-            title="Embedded content"
-          />
+          <>
+            <iframe
+              ref={iframeRef}
+              src={embeddedUrl}
+              className="w-full h-full"
+              sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-modals"
+              title="Embedded content"
+            />
+            {/* Floating controls inside embed */}
+            <div className="absolute top-3 right-3 flex items-center gap-1 z-10">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="secondary"
+                    size="icon"
+                    onClick={handleFullscreen}
+                    className="h-9 w-9 bg-background/80 backdrop-blur-sm hover:bg-background border border-border shadow-lg"
+                  >
+                    {isFullscreen ? (
+                      <Minimize className="h-4 w-4" />
+                    ) : (
+                      <Maximize className="h-4 w-4" />
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>{isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}</p>
+                </TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="secondary"
+                    size="icon"
+                    onClick={handleClear}
+                    className="h-9 w-9 bg-background/80 backdrop-blur-sm hover:bg-destructive hover:text-destructive-foreground border border-border shadow-lg"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Close</p>
+                </TooltipContent>
+              </Tooltip>
+            </div>
+          </>
         ) : (
           <div className="w-full h-full flex flex-col items-center justify-center text-muted-foreground">
             <div className="w-20 h-20 rounded-full bg-secondary flex items-center justify-center mb-4 neon-glow">
