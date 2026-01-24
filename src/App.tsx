@@ -15,6 +15,7 @@ import { Login } from "./pages/Login";
 import { Admin } from "./pages/Admin";
 import { Agent } from "./pages/Agent";
 import Games from "./pages/Games";
+import Apps from "./pages/Apps";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -124,6 +125,7 @@ const App = () => (
                 <Route path="/chat" element={<Chat />} />
                 <Route path="/ai" element={<AI />} />
                 <Route path="/games" element={<Games />} />
+                <Route path="/apps" element={<Apps />} />
                 <Route path="/settings" element={<Settings />} />
                 <Route path="/admin" element={
                   <AdminRoute>
