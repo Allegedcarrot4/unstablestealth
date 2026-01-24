@@ -74,7 +74,7 @@ export const Sidebar = () => {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 p-3 space-y-2">
+      <nav className="flex-1 p-3 space-y-2 overflow-y-auto">
         {allNavItems.map((item) => {
           const isActive = location.pathname === item.path || 
             (item.path === '/' && location.pathname === '/embedder');
