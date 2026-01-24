@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { MessageCircle, Send, Users, Undo2, Trash2, EyeOff, Shield, Crown } from 'lucide-react';
+import { Terminal, Send, Users, Undo2, Trash2, EyeOff, Shield, Crown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -18,6 +18,15 @@ interface ChatMessage {
   deleted_at?: string | null;
   hidden_for_session_ids?: string[];
 }
+
+interface SystemMessage {
+  id: string;
+  type: 'system';
+  message: string;
+  created_at: string;
+}
+
+type DisplayMessage = (ChatMessage & { type?: 'user' }) | SystemMessage;
 
 interface Profile {
   session_id: string;
@@ -45,6 +54,7 @@ export const Chat = () => {
   const [newMessage, setNewMessage] = useState('');
   const [onlineCount, setOnlineCount] = useState(1);
   const [isTyping, setIsTyping] = useState(false);
+  const [hasShownWelcome, setHasShownWelcome] = useState(false);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const { session, isAdmin, isOwner } = useAuth();
@@ -341,6 +351,23 @@ export const Chat = () => {
     return true;
   });
 
+  // Create display messages with system welcome message
+  const displayMessages: DisplayMessage[] = [
+    {
+      id: 'system-welcome',
+      type: 'system',
+      message: 'Welcome to the Game Zone chat! 🎮',
+      created_at: new Date(0).toISOString()
+    },
+    ...(session && profiles[session.id] ? [{
+      id: 'system-join',
+      type: 'system' as const,
+      message: `${profiles[session.id]} joined the chat!`,
+      created_at: new Date(1).toISOString()
+    }] : []),
+    ...visibleMessages.map(msg => ({ ...msg, type: 'user' as const }))
+  ];
+
   const getRoleBadge = (role: 'user' | 'admin' | 'owner') => {
     if (role === 'owner') {
       return (
@@ -362,110 +389,109 @@ export const Chat = () => {
   };
 
   return (
-    <div className="h-screen flex flex-col animate-fade-in">
+    <div className="h-screen flex flex-col animate-fade-in bg-black/95">
       {/* Announcements */}
       <div className="p-4 pb-0 shrink-0">
         <AnnouncementBanner />
       </div>
 
-      {/* Header */}
-      <div className="p-4 border-b border-border shrink-0">
+      {/* Console Header */}
+      <div className="p-4 border-b border-primary/30 shrink-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-lg bg-primary/10 border border-primary/30">
-              <MessageCircle className="h-5 w-5 text-primary" />
+              <Terminal className="h-5 w-5 text-primary" />
             </div>
             <div>
-              <h1 className="text-xl font-bold font-mono text-primary">Global Chat</h1>
-              <p className="text-muted-foreground text-xs">Chat with everyone online</p>
+              <h1 className="text-xl font-bold font-mono text-primary">Game Zone Console</h1>
+              <p className="text-primary/60 text-xs font-mono">~/chat --global</p>
             </div>
           </div>
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <div className="flex items-center gap-2 text-sm text-primary/70 font-mono">
+            <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
             <Users className="h-4 w-4" />
             <span>{onlineCount} online</span>
           </div>
         </div>
       </div>
 
-      {/* Messages */}
-      <ScrollArea className="flex-1 p-4" ref={scrollRef}>
-        <div className="space-y-3">
-          {visibleMessages.length === 0 ? (
-            <div className="text-center text-muted-foreground py-12">
-              <MessageCircle className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <p>No messages yet. Start the conversation!</p>
+      {/* Console Messages */}
+      <ScrollArea className="flex-1 p-4 bg-black/50" ref={scrollRef}>
+        <div className="space-y-1 font-mono text-sm">
+          {displayMessages.length === 0 ? (
+            <div className="text-center text-primary/50 py-12">
+              <Terminal className="h-12 w-12 mx-auto mb-4 opacity-50" />
+              <p className="font-mono">Waiting for input...</p>
             </div>
           ) : (
-            visibleMessages.map((msg) => {
-              const isOwn = msg.session_id === session?.id;
-              const userName = getUserName(msg.session_id);
-              const userColor = generateColor(msg.session_id);
-              const senderRole = getUserRole(msg.session_id);
-              const canUndo = isOwn && ownRecentIds.includes(msg.id);
+            displayMessages.map((msg) => {
+              // System message
+              if (msg.type === 'system') {
+                return (
+                  <div key={msg.id} className="text-primary/80 py-1">
+                    <span className="text-yellow-500">System:</span>{' '}
+                    <span className="text-primary/90">{msg.message}</span>
+                  </div>
+                );
+              }
+
+              // User message
+              const chatMsg = msg as ChatMessage;
+              const isOwn = chatMsg.session_id === session?.id;
+              const userName = getUserName(chatMsg.session_id);
+              const userColor = generateColor(chatMsg.session_id);
+              const senderRole = getUserRole(chatMsg.session_id);
+              const canUndo = isOwn && ownRecentIds.includes(chatMsg.id);
               
               return (
-                <div
-                  key={msg.id}
-                  className={`flex ${isOwn ? 'justify-end' : 'justify-start'} group`}
-                >
-                  <div className="relative">
-                    <div
-                      className={`max-w-[80%] rounded-2xl px-4 py-2 ${
-                        isOwn
-                          ? 'bg-primary text-primary-foreground rounded-br-md'
-                          : 'bg-secondary text-secondary-foreground rounded-bl-md'
-                      }`}
-                    >
-                      {!isOwn && (
-                        <div className="flex items-center gap-2 mb-1">
-                          <p className="text-xs font-medium" style={{ color: userColor }}>
-                            {userName}
-                          </p>
-                          {getRoleBadge(senderRole)}
-                        </div>
-                      )}
-                      <p className="text-sm break-words">{msg.message}</p>
-                      <p className={`text-xs mt-1 ${isOwn ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
-                        {formatTime(msg.created_at)}
-                      </p>
-                    </div>
-                    
-                    {/* Action buttons */}
-                    <div className={`absolute top-0 ${isOwn ? 'left-0 -translate-x-full pr-2' : 'right-0 translate-x-full pl-2'} opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1`}>
-                      {canUndo && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6"
-                          onClick={() => handleUndo(msg.id)}
-                          title="Undo (remove for everyone)"
-                        >
-                          <Undo2 className="h-3 w-3" />
-                        </Button>
-                      )}
-                      {!isOwn && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6"
-                          onClick={() => handleHide(msg.id)}
-                          title="Hide for me"
-                        >
-                          <EyeOff className="h-3 w-3" />
-                        </Button>
-                      )}
-                      {canModerate && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6 text-destructive hover:text-destructive"
-                          onClick={() => handleAdminDelete(msg.id)}
-                          title="Delete for everyone"
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
-                      )}
-                    </div>
+                <div key={chatMsg.id} className="group py-1 hover:bg-primary/5 px-2 -mx-2 rounded flex items-start gap-2">
+                  <div className="flex-1 min-w-0">
+                    <span className="text-muted-foreground">[{formatTime(chatMsg.created_at)}]</span>{' '}
+                    <span style={{ color: userColor }} className="font-semibold">
+                      {userName}
+                    </span>
+                    {getRoleBadge(senderRole) && (
+                      <span className="ml-1 inline-flex">{getRoleBadge(senderRole)}</span>
+                    )}
+                    <span className="text-muted-foreground">:</span>{' '}
+                    <span className="text-foreground break-words">{chatMsg.message}</span>
+                  </div>
+                  
+                  {/* Action buttons */}
+                  <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 shrink-0">
+                    {canUndo && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-5 w-5 text-muted-foreground hover:text-primary"
+                        onClick={() => handleUndo(chatMsg.id)}
+                        title="Undo (remove for everyone)"
+                      >
+                        <Undo2 className="h-3 w-3" />
+                      </Button>
+                    )}
+                    {!isOwn && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-5 w-5 text-muted-foreground hover:text-primary"
+                        onClick={() => handleHide(chatMsg.id)}
+                        title="Hide for me"
+                      >
+                        <EyeOff className="h-3 w-3" />
+                      </Button>
+                    )}
+                    {canModerate && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-5 w-5 text-destructive hover:text-destructive"
+                        onClick={() => handleAdminDelete(chatMsg.id)}
+                        title="Delete for everyone"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    )}
                   </div>
                 </div>
               );
@@ -477,9 +503,10 @@ export const Chat = () => {
       {/* Typing Indicator */}
       <TypingIndicator />
 
-      {/* Input */}
-      <div className="p-4 border-t border-border shrink-0">
-        <div className="flex gap-2">
+      {/* Console Input */}
+      <div className="p-4 border-t border-primary/30 shrink-0 bg-black/50">
+        <div className="flex gap-2 items-center font-mono">
+          <span className="text-primary shrink-0">&gt;_</span>
           <Input
             value={newMessage}
             onChange={(e) => {
@@ -489,11 +516,16 @@ export const Chat = () => {
               }
             }}
             onKeyPress={handleKeyPress}
-            placeholder="Type a message..."
-            className="flex-1"
+            placeholder="Enter message..."
+            className="flex-1 bg-transparent border-primary/30 text-foreground placeholder:text-muted-foreground font-mono focus-visible:ring-primary/50"
             maxLength={500}
           />
-          <Button onClick={sendMessage} disabled={!newMessage.trim()} size="icon">
+          <Button 
+            onClick={sendMessage} 
+            disabled={!newMessage.trim()} 
+            size="icon"
+            className="bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30"
+          >
             <Send className="h-4 w-4" />
           </Button>
         </div>
