@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useRef } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -13,13 +13,13 @@ import {
   FileUp,
   AppWindow,
   Image as ImageIcon,
-  Maximize,
   Pencil,
   Plus,
   Search,
   Trash2,
   X,
 } from 'lucide-react';
+import { AppPlayerDialog } from '@/components/AppPlayerDialog';
 
 interface App {
   id: string;
@@ -62,53 +62,6 @@ function fileToDataUrl(file: File): Promise<string> {
     reader.onload = () => resolve(reader.result as string);
     reader.readAsDataURL(file);
   });
-}
-
-function AppPlayerDialog({ app, onClose }: { app: App | null; onClose: () => void }) {
-  const appContainerRef = useRef<HTMLDivElement>(null);
-
-  const handleFullscreen = () => {
-    if (!appContainerRef.current) return;
-    
-    if (document.fullscreenElement) {
-      document.exitFullscreen();
-    } else {
-      appContainerRef.current.requestFullscreen().catch((err) => {
-        console.error('Fullscreen failed:', err);
-      });
-    }
-  };
-
-  return (
-    <Dialog open={!!app} onOpenChange={() => onClose()}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden">
-        <DialogHeader>
-          <DialogTitle className="flex items-center justify-between gap-2">
-            <span className="flex items-center gap-2">
-              <AppWindow className="h-5 w-5" />
-              {app?.title}
-            </span>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={handleFullscreen}
-              title="Fullscreen"
-              className="h-8 w-8"
-            >
-              <Maximize className="h-4 w-4" />
-            </Button>
-          </DialogTitle>
-        </DialogHeader>
-        <div
-          ref={appContainerRef}
-          className="mt-4 overflow-auto bg-background"
-          style={{ maxHeight: 'calc(90vh - 120px)' }}
-        >
-          <div className="app-embed" dangerouslySetInnerHTML={{ __html: app?.source_code || '' }} />
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
 }
 
 export default function Apps() {
