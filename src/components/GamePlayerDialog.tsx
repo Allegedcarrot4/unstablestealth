@@ -1,5 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
-import { Gamepad2, Maximize, Minimize, X } from 'lucide-react';
+import { Gamepad2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
@@ -17,101 +16,44 @@ interface GamePlayerDialogProps {
 }
 
 export function GamePlayerDialog({ game, onClose }: GamePlayerDialogProps) {
-  const gameContainerRef = useRef<HTMLDivElement>(null);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-
-  // Auto-fullscreen when game is selected
-  useEffect(() => {
-    if (game && gameContainerRef.current) {
-      // Small delay to ensure the DOM is ready
-      const timer = setTimeout(() => {
-        gameContainerRef.current?.requestFullscreen().catch((err) => {
-          console.error('Auto-fullscreen failed:', err);
-        });
-      }, 100);
-      return () => clearTimeout(timer);
-    }
-  }, [game]);
-
-  // Listen for fullscreen changes
-  useEffect(() => {
-    const handleFullscreenChange = () => {
-      const isNowFullscreen = !!document.fullscreenElement;
-      setIsFullscreen(isNowFullscreen);
-      
-      // If exiting fullscreen, close the player
-      if (!isNowFullscreen && game) {
-        onClose();
-      }
-    };
-
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
-    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
-  }, [game, onClose]);
-
-  const handleFullscreen = () => {
-    if (!gameContainerRef.current) return;
-
-    if (document.fullscreenElement) {
-      document.exitFullscreen();
-    } else {
-      gameContainerRef.current.requestFullscreen().catch((err) => {
-        console.error('Fullscreen failed:', err);
-      });
-    }
-  };
-
-  const handleClose = () => {
-    if (document.fullscreenElement) {
-      document.exitFullscreen();
-    }
-    onClose();
-  };
-
   if (!game) return null;
 
   return (
     <div
-      ref={gameContainerRef}
-      className="fixed inset-0 z-[9999] bg-background"
+      className="fixed inset-0 z-[9999] bg-background overflow-hidden"
       style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
         width: '100vw',
         height: '100vh',
       }}
     >
-      {/* Game content */}
-      <div
-        className="w-full h-full"
-        dangerouslySetInnerHTML={{ __html: game.source_code }}
+      {/* Game content - using iframe for better isolation */}
+      <iframe
+        srcDoc={game.source_code}
+        className="w-full h-full border-0"
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+        }}
+        sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-modals"
+        allow="fullscreen"
       />
 
-      {/* Floating controls */}
-      <div className="absolute top-3 right-3 flex items-center gap-1 z-10">
+      {/* Floating close button */}
+      <div className="absolute top-3 right-3 z-10">
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
               variant="secondary"
               size="icon"
-              onClick={handleFullscreen}
-              className="h-9 w-9 bg-background/80 backdrop-blur-sm hover:bg-background border border-border shadow-lg"
-            >
-              {isFullscreen ? (
-                <Minimize className="h-4 w-4" />
-              ) : (
-                <Maximize className="h-4 w-4" />
-              )}
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>
-            <p>{isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}</p>
-          </TooltipContent>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="secondary"
-              size="icon"
-              onClick={handleClose}
+              onClick={onClose}
               className="h-9 w-9 bg-background/80 backdrop-blur-sm hover:bg-destructive hover:text-destructive-foreground border border-border shadow-lg"
             >
               <X className="h-4 w-4" />
