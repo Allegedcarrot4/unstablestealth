@@ -16,6 +16,7 @@ import { Admin } from "./pages/Admin";
 import { Agent } from "./pages/Agent";
 import Games from "./pages/Games";
 import Apps from "./pages/Apps";
+import WaitingList from "./pages/WaitingList";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -135,6 +136,11 @@ const App = () => (
                 <Route path="/agent" element={
                   <OwnerRoute>
                     <Agent />
+                  </OwnerRoute>
+                } />
+                <Route path="/waiting-list" element={
+                  <OwnerRoute>
+                    <WaitingList />
                   </OwnerRoute>
                 } />
               </Route>

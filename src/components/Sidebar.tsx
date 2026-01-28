@@ -11,7 +11,8 @@ import {
   Bot,
   Gamepad2,
   Compass,
-  AppWindow
+  AppWindow,
+  Users
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSettings } from '@/contexts/SettingsContext';
@@ -38,7 +39,7 @@ export const Sidebar = () => {
 
   const allNavItems = isAdmin 
     ? isOwner
-      ? [...navItems.slice(0, 2), { path: '/admin', icon: Crown, label: 'Admin' }, { path: '/agent', icon: Bot, label: 'Agent' }, ...navItems.slice(2)]
+      ? [...navItems.slice(0, 2), { path: '/admin', icon: Crown, label: 'Admin' }, { path: '/waiting-list', icon: Users, label: 'Waiting List' }, { path: '/agent', icon: Bot, label: 'Agent' }, ...navItems.slice(2)]
       : [...navItems.slice(0, 2), { path: '/admin', icon: Crown, label: 'Admin' }, ...navItems.slice(2)]
     : navItems;
 

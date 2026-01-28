@@ -18,11 +18,14 @@ interface AuthContextType {
   isBanned: boolean;
   needsUsername: boolean;
   siteDisabled: boolean;
-  login: (password: string) => Promise<{ success: boolean; error?: string; needsUsername?: boolean }>;
+  isWaiting: boolean;
+  waitingMessage: string;
+  login: (password: string) => Promise<{ success: boolean; error?: string; needsUsername?: boolean; waiting?: boolean }>;
   setUsername: (username: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
   checkBanStatus: () => Promise<boolean>;
   checkSiteStatus: () => Promise<boolean>;
+  checkWaitingStatus: () => Promise<{ waiting: boolean; message?: string }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -42,6 +45,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isLoading, setIsLoading] = useState(true);
   const [needsUsername, setNeedsUsername] = useState(false);
   const [siteDisabled, setSiteDisabled] = useState(false);
+  const [isWaiting, setIsWaiting] = useState(false);
+  const [waitingMessage, setWaitingMessage] = useState('');
 
   const checkBanStatus = useCallback(async (): Promise<boolean> => {
     const deviceId = getDeviceId();
@@ -69,9 +74,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return false;
   }, []);
 
+  const checkWaitingStatus = useCallback(async (): Promise<{ waiting: boolean; message?: string }> => {
+    const deviceId = getDeviceId();
+    
+    const { data: waitingData } = await supabase
+      .from('waiting_list')
+      .select('*')
+      .eq('device_id', deviceId)
+      .maybeSingle();
+    
+    if (waitingData) {
+      if (waitingData.status === 'pending') {
+        return { waiting: true, message: 'Your access request is pending approval' };
+      }
+      if (waitingData.status === 'denied') {
+        return { waiting: true, message: 'Your access request was denied' };
+      }
+    }
+    
+    return { waiting: false };
+  }, []);
+
   // Check for existing session on mount
-  // SECURITY: Sessions table is blocked from client reads.
-  // We rely on stored session data from last authenticate call.
   useEffect(() => {
     const checkSession = async () => {
       const deviceId = getDeviceId();
@@ -80,6 +104,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const isBanned = await checkBanStatus();
       if (isBanned) {
         setSession({ id: '', device_id: deviceId, role: 'user', is_banned: true });
+        setIsLoading(false);
+        return;
+      }
+
+      // Check waiting list status
+      const waitingStatus = await checkWaitingStatus();
+      if (waitingStatus.waiting) {
+        setIsWaiting(true);
+        setWaitingMessage(waitingStatus.message || '');
         setIsLoading(false);
         return;
       }
@@ -119,9 +152,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
     
     checkSession();
-  }, [checkBanStatus, checkSiteStatus]);
+  }, [checkBanStatus, checkSiteStatus, checkWaitingStatus]);
 
-  const login = async (password: string): Promise<{ success: boolean; error?: string; needsUsername?: boolean }> => {
+  const login = async (password: string): Promise<{ success: boolean; error?: string; needsUsername?: boolean; waiting?: boolean }> => {
     const deviceId = getDeviceId();
     
     try {
@@ -141,6 +174,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { success: false, error: data.error };
       }
 
+      // Check if user is in waiting list
+      if (data.waiting) {
+        setIsWaiting(true);
+        setWaitingMessage(data.message || 'Your access request is pending approval');
+        return { success: true, waiting: true };
+      }
+
       const sessionData = {
         id: data.session.id,
         device_id: data.session.device_id,
@@ -150,6 +190,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
       
       setSession(sessionData);
+      setIsWaiting(false);
+      setWaitingMessage('');
       
       // SECURITY: Store session data locally since sessions table is blocked from client reads
       localStorage.setItem('session_data', JSON.stringify(sessionData));
@@ -208,12 +250,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Clear local session data
     localStorage.removeItem('session_data');
     
-    // Note: We can't delete from sessions table directly anymore (RLS blocks it)
-    // The session will remain in DB but user is logged out locally
-    // Admin can ban the device if needed
-    
     setSession(null);
     setNeedsUsername(false);
+    setIsWaiting(false);
+    setWaitingMessage('');
   };
 
   return (
@@ -227,11 +267,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isBanned: session?.is_banned ?? false,
         needsUsername,
         siteDisabled,
+        isWaiting,
+        waitingMessage,
         login,
         setUsername,
         logout,
         checkBanStatus,
-        checkSiteStatus
+        checkSiteStatus,
+        checkWaitingStatus
       }}
     >
       {children}
