@@ -119,6 +119,66 @@ serve(async (req) => {
       }
     }
 
+    // For non-owners (users and admins), check waiting list status
+    if (!isOwner) {
+      const { data: waitingData } = await supabase
+        .from('waiting_list')
+        .select('*')
+        .eq('device_id', device_id)
+        .maybeSingle();
+
+      if (waitingData) {
+        // Check current status
+        if (waitingData.status === 'denied') {
+          return new Response(
+            JSON.stringify({ error: 'Your access request was denied' }),
+            { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+        
+        if (waitingData.status === 'pending') {
+          return new Response(
+            JSON.stringify({ 
+              waiting: true, 
+              message: 'Your access request is pending approval',
+              waiting_id: waitingData.id
+            }),
+            { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+        
+        // Status is 'approved' - continue with login
+      } else {
+        // Add to waiting list
+        const { data: newWaiting, error: waitingError } = await supabase
+          .from('waiting_list')
+          .insert({
+            device_id,
+            ip_address: clientIp !== 'unknown' ? clientIp : null,
+            status: 'pending'
+          })
+          .select()
+          .single();
+
+        if (waitingError) {
+          console.error('Failed to add to waiting list:', waitingError);
+          return new Response(
+            JSON.stringify({ error: 'Failed to process access request' }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        return new Response(
+          JSON.stringify({ 
+            waiting: true, 
+            message: 'Your access request has been submitted and is pending approval',
+            waiting_id: newWaiting.id
+          }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+
     // Check for existing session
     const { data: existingSession } = await supabase
       .from('sessions')
